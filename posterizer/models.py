@@ -15,6 +15,22 @@ HEX_COLOR_VALIDATOR = RegexValidator(
 MIN_LAYERS = 2
 MAX_LAYERS = 16
 
+# Mirrors the methods implemented in main.py.
+PREPROCESS_CHOICES = [
+    ("none", "بدون هموارسازی"),
+    ("gaussian", "محو گاوسی"),
+    ("median", "فیلتر میانه"),
+    ("bilateral", "دوطرفه (حفظ لبه‌ها)"),
+]
+
+POSTPROCESS_CHOICES = [
+    ("none", "بدون پاک‌سازی"),
+    ("median", "فیلتر میانه"),
+    ("morphology", "مورفولوژی"),
+    ("connected_components", "مؤلفه‌های همبند"),
+    ("majority_filter", "فیلتر اکثریت"),
+]
+
 
 def _grayscale_ramp(count: int) -> list[str]:
     """Evenly spaced black→white hex ramp, used as a safe fallback."""
@@ -58,6 +74,78 @@ class SiteSettings(models.Model):
         default=1000,
         validators=[MinValueValidator(1)],
         help_text="مبلغ برآوردی به نزدیک‌ترین مضرب این عدد گرد می‌شود.",
+    )
+
+    # --- defaults the studio opens with -------------------------------------
+
+    default_profile = models.ForeignKey(
+        "ColorProfile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="پروفایل رنگی پیش‌فرض",
+        help_text="خالی بماند یعنی اولین پروفایل فعال بر اساس ترتیب نمایش.",
+    )
+    default_preprocess_method = models.CharField(
+        "روش هموارسازی پیش‌فرض", max_length=20, choices=PREPROCESS_CHOICES, default="bilateral"
+    )
+    default_gaussian_kernel_size = models.PositiveSmallIntegerField(
+        "اندازه کرنل گاوسی", default=5, validators=[MinValueValidator(1), MaxValueValidator(31)]
+    )
+    default_median_kernel_size = models.PositiveSmallIntegerField(
+        "اندازه کرنل میانه", default=5, validators=[MinValueValidator(1), MaxValueValidator(31)]
+    )
+    default_bilateral_d = models.PositiveSmallIntegerField(
+        "قطر فیلتر دوطرفه", default=7, validators=[MinValueValidator(1), MaxValueValidator(25)]
+    )
+    default_bilateral_sigma_color = models.FloatField(
+        "سیگما رنگ", default=45.0, validators=[MinValueValidator(1), MaxValueValidator(200)]
+    )
+    default_bilateral_sigma_space = models.FloatField(
+        "سیگما مکان", default=45.0, validators=[MinValueValidator(1), MaxValueValidator(200)]
+    )
+    default_postprocess_method = models.CharField(
+        "روش پاک‌سازی پیش‌فرض",
+        max_length=30,
+        choices=POSTPROCESS_CHOICES,
+        default="connected_components",
+    )
+    default_morph_kernel_size = models.PositiveSmallIntegerField(
+        "اندازه کرنل مورفولوژی", default=3, validators=[MinValueValidator(1), MaxValueValidator(15)]
+    )
+    default_min_region_size = models.PositiveIntegerField(
+        "حداقل اندازه ناحیه", default=60, validators=[MinValueValidator(1), MaxValueValidator(5000)]
+    )
+    default_majority_window_size = models.PositiveSmallIntegerField(
+        "اندازه پنجره اکثریت", default=3, validators=[MinValueValidator(1), MaxValueValidator(15)]
+    )
+    default_preserve_edges = models.BooleanField("حفظ لبه‌ها", default=True)
+    default_use_superpixels = models.BooleanField("استفاده از سوپرپیکسل", default=False)
+    default_superpixel_region_size = models.PositiveSmallIntegerField(
+        "اندازه ناحیه سوپرپیکسل", default=25, validators=[MinValueValidator(5), MaxValueValidator(100)]
+    )
+
+    # --- 3D export ----------------------------------------------------------
+
+    stl_layer_height_mm = models.DecimalField(
+        "ارتفاع هر لایه (میلی‌متر)",
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("2.00"),
+        validators=[MinValueValidator(Decimal("0.05"))],
+        help_text="لایهٔ ۱ به این اندازه، لایهٔ ۲ دو برابر، لایهٔ ۳ سه برابر و … ارتفاع می‌گیرد.",
+    )
+    stl_invert_heights = models.BooleanField(
+        "وارونه کردن ارتفاع لایه‌ها",
+        default=False,
+        help_text="به‌طور پیش‌فرض روشن‌ترین لایه بلندترین است. با فعال کردن این گزینه، تیره‌ترین لایه بلندترین می‌شود.",
+    )
+    stl_max_resolution = models.PositiveIntegerField(
+        "حداکثر دقت مدل سه‌بعدی (پیکسل)",
+        default=400,
+        validators=[MinValueValidator(50), MaxValueValidator(2000)],
+        help_text="بزرگ‌ترین ضلع مدل به این تعداد سلول تقسیم می‌شود. عدد بزرگ‌تر = جزئیات بیشتر و فایل سنگین‌تر.",
     )
 
     updated_at = models.DateTimeField("آخرین ویرایش", auto_now=True)
@@ -117,6 +205,44 @@ class SiteSettings(models.Model):
         step = Decimal(self.cost_rounding or 1)
         rounded = (raw / step).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * step
         return int(rounded)
+
+    # -- studio defaults ----------------------------------------------------
+
+    def render_defaults(self) -> dict:
+        """
+        The processing settings the studio opens with.
+
+        Same shape as main.DEFAULT_CONFIG minus num_levels, which always comes
+        from the chosen colour profile.
+        """
+        return {
+            "preprocess_method": self.default_preprocess_method,
+            "gaussian_kernel_size": self.default_gaussian_kernel_size,
+            "median_kernel_size": self.default_median_kernel_size,
+            "bilateral_d": self.default_bilateral_d,
+            "bilateral_sigma_color": self.default_bilateral_sigma_color,
+            "bilateral_sigma_space": self.default_bilateral_sigma_space,
+            "postprocess_method": self.default_postprocess_method,
+            "morph_kernel_size": self.default_morph_kernel_size,
+            "min_region_size": self.default_min_region_size,
+            "preserve_edges": self.default_preserve_edges,
+            "use_superpixels": self.default_use_superpixels,
+            "superpixel_region_size": self.default_superpixel_region_size,
+            "majority_window_size": self.default_majority_window_size,
+        }
+
+    def layer_heights_mm(self, num_layers: int) -> list:
+        """
+        Height of every layer, in millimetres.
+
+        Layer 1 gets one unit, layer 2 two units, layer 3 three units, and so
+        on. `stl_invert_heights` flips which end of the palette is tallest.
+        """
+        unit = float(self.stl_layer_height_mm)
+        heights = [(index + 1) * unit for index in range(num_layers)]
+        if self.stl_invert_heights:
+            heights.reverse()
+        return heights
 
     def as_dict(self, ratio=None) -> dict:
         data = {

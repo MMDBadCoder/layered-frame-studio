@@ -8,7 +8,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
 from django.db import transaction
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
@@ -19,6 +19,7 @@ from main import DEFAULT_CONFIG, process_image_bytes
 
 from .jalali import format_cm, format_toman, to_persian_digits
 from .models import ColorProfile, Order, SiteSettings
+from .stl import order_to_stl
 
 UPLOAD_DIR = settings.BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
@@ -37,13 +38,15 @@ except Exception:  # pragma: no cover
 
 # ---------------------------------------------------------------- config ----
 
-def parse_config(form, profile: ColorProfile) -> dict:
+def parse_config(form, profile: ColorProfile, defaults: dict | None = None) -> dict:
     """
     Build the processing config from the submitted form.
 
-    The layer count is no longer chosen by the visitor: it comes from the
-    colour profile they picked.
+    Anything the visitor did not send falls back to the admin-configured
+    studio defaults. The layer count is never taken from the form: it comes
+    from the colour profile they picked.
     """
+    defaults = defaults or SiteSettings.load().render_defaults()
 
     def get_int(key, default):
         return int(form.get(key, default))
@@ -57,23 +60,23 @@ def parse_config(form, profile: ColorProfile) -> dict:
             return default
         return val.lower() in ("true", "1", "on", "yes")
 
-    use_superpixels = get_bool("use_superpixels", DEFAULT_CONFIG["use_superpixels"])
+    use_superpixels = get_bool("use_superpixels", defaults["use_superpixels"])
 
     return {
         "num_levels": max(2, profile.num_layers),
-        "preprocess_method": form.get("preprocess_method", DEFAULT_CONFIG["preprocess_method"]),
-        "gaussian_kernel_size": get_int("gaussian_kernel_size", DEFAULT_CONFIG["gaussian_kernel_size"]),
-        "median_kernel_size": get_int("median_kernel_size", DEFAULT_CONFIG["median_kernel_size"]),
-        "bilateral_d": get_int("bilateral_d", DEFAULT_CONFIG["bilateral_d"]),
-        "bilateral_sigma_color": get_float("bilateral_sigma_color", DEFAULT_CONFIG["bilateral_sigma_color"]),
-        "bilateral_sigma_space": get_float("bilateral_sigma_space", DEFAULT_CONFIG["bilateral_sigma_space"]),
-        "postprocess_method": form.get("postprocess_method", DEFAULT_CONFIG["postprocess_method"]),
-        "morph_kernel_size": get_int("morph_kernel_size", DEFAULT_CONFIG["morph_kernel_size"]),
-        "min_region_size": get_int("min_region_size", DEFAULT_CONFIG["min_region_size"]),
-        "preserve_edges": get_bool("preserve_edges", DEFAULT_CONFIG["preserve_edges"]),
+        "preprocess_method": form.get("preprocess_method", defaults["preprocess_method"]),
+        "gaussian_kernel_size": get_int("gaussian_kernel_size", defaults["gaussian_kernel_size"]),
+        "median_kernel_size": get_int("median_kernel_size", defaults["median_kernel_size"]),
+        "bilateral_d": get_int("bilateral_d", defaults["bilateral_d"]),
+        "bilateral_sigma_color": get_float("bilateral_sigma_color", defaults["bilateral_sigma_color"]),
+        "bilateral_sigma_space": get_float("bilateral_sigma_space", defaults["bilateral_sigma_space"]),
+        "postprocess_method": form.get("postprocess_method", defaults["postprocess_method"]),
+        "morph_kernel_size": get_int("morph_kernel_size", defaults["morph_kernel_size"]),
+        "min_region_size": get_int("min_region_size", defaults["min_region_size"]),
+        "preserve_edges": get_bool("preserve_edges", defaults["preserve_edges"]),
         "use_superpixels": use_superpixels and SUPERPIXELS_AVAILABLE,
-        "superpixel_region_size": get_int("superpixel_region_size", DEFAULT_CONFIG["superpixel_region_size"]),
-        "majority_window_size": get_int("majority_window_size", DEFAULT_CONFIG["majority_window_size"]),
+        "superpixel_region_size": get_int("superpixel_region_size", defaults["superpixel_region_size"]),
+        "majority_window_size": get_int("majority_window_size", defaults["majority_window_size"]),
     }
 
 
@@ -81,8 +84,18 @@ def active_profiles():
     return ColorProfile.objects.filter(is_active=True).prefetch_related("layers")
 
 
+def default_profile(profiles=None) -> ColorProfile | None:
+    """The profile the studio pre-selects, as configured by the admin."""
+    profiles = active_profiles() if profiles is None else profiles
+    configured = SiteSettings.load().default_profile
+
+    if configured and configured.is_active:
+        return configured
+    return profiles.first() if hasattr(profiles, "first") else (profiles[0] if profiles else None)
+
+
 def resolve_profile(form) -> ColorProfile | None:
-    """The profile the visitor selected; falls back to the first active one."""
+    """The profile the visitor selected; falls back to the configured default."""
     raw = form.get("profile_id")
     profiles = active_profiles()
 
@@ -91,7 +104,7 @@ def resolve_profile(form) -> ColorProfile | None:
             return profiles.get(pk=int(raw))
         except (ColorProfile.DoesNotExist, ValueError, TypeError):
             return None
-    return profiles.first()
+    return default_profile(profiles)
 
 
 # ----------------------------------------------------------- image files ----
@@ -229,11 +242,15 @@ def to_ascii_number(value: str) -> str:
 def index(request):
     """The studio page. Deliberately open to anonymous visitors."""
     profiles = list(active_profiles())
+    site = SiteSettings.load()
+    selected = default_profile(profiles)
 
     context = {
-        "default_config": DEFAULT_CONFIG,
+        # Studio defaults are admin-configurable, not hardcoded.
+        "default_config": site.render_defaults(),
         "profiles": profiles,
         "profiles_json": [profile.as_dict() for profile in profiles],
+        "selected_profile_id": selected.id if selected else None,
         "sizing": sizing_payload(),
         "superpixels_available": SUPERPIXELS_AVAILABLE,
         "max_unreviewed": Order.MAX_UNREVIEWED,
@@ -288,11 +305,81 @@ def order_image(request, pk: int, kind: str):
 
 # ------------------------------------------------------------------ APIs ----
 
+@login_required
+@require_GET
+def order_stl(request, pk: int):
+    """
+    Generate and download the 3D model for an order.
+
+    Admin-only: turning an order into a printable plate is a production step,
+    not something the customer does.
+    """
+    if not request.user.is_staff:
+        raise Http404
+
+    order = get_object_or_404(Order, pk=pk)
+    if not order.result_image:
+        raise Http404
+
+    site = SiteSettings.load()
+    colors = order.colors or (order.profile.color_list() if order.profile else [])
+    if not colors:
+        return HttpResponseBadRequest("این سفارش هیچ رنگ لایه‌ای ثبت‌شده ندارد.")
+
+    try:
+        with Image.open(order.result_image.path) as image:
+            image.load()
+            width_px, height_px = image.size
+
+            width_mm, height_mm = _frame_size_mm(order, site, width_px / height_px)
+            payload, stats = order_to_stl(
+                image,
+                colors=colors,
+                layer_heights_mm=site.layer_heights_mm(len(colors)),
+                width_mm=width_mm,
+                height_mm=height_mm,
+                max_resolution=site.stl_max_resolution,
+                header=f"Photo Frame 2D order {order.pk}",
+            )
+    except (ValueError, OSError) as exc:
+        return HttpResponseBadRequest(f"ساخت مدل سه‌بعدی ناموفق بود: {exc}")
+
+    response = HttpResponse(payload, content_type="model/stl")
+    response["Content-Disposition"] = f'attachment; filename="photo-frame-2d-order-{order.pk}.stl"'
+    response["X-Model-Triangles"] = str(stats["triangles"])
+    response["X-Model-Size-Mm"] = f"{stats['width_mm']}x{stats['height_mm']}x{stats['max_height_mm']}"
+    return response
+
+
+def _frame_size_mm(order: Order, site: SiteSettings, ratio: float) -> tuple:
+    """
+    Physical plate size in millimetres.
+
+    Orders placed before frame sizing existed have no dimensions, so fall back
+    to a default width that respects the configured limits and the image ratio.
+    """
+    if order.width_cm and order.height_cm:
+        return float(order.width_cm) * 10, float(order.height_cm) * 10
+
+    low, high = site.width_bounds_for_ratio(ratio)
+    if low > high:
+        raise ValueError("نسبت این تصویر با محدودهٔ اندازهٔ فعلی سازگار نیست.")
+
+    width = min(max(Decimal("30"), low), high)
+    height = site.height_for_width(width, ratio)
+    return float(width) * 10, float(height) * 10
+
+
 @require_GET
 def get_config(request):
+    site = SiteSettings.load()
+    selected = default_profile()
+
     return JsonResponse({
-        "defaults": DEFAULT_CONFIG,
+        "defaults": site.render_defaults(),
+        "engine_defaults": DEFAULT_CONFIG,
         "profiles": [profile.as_dict() for profile in active_profiles()],
+        "default_profile_id": selected.id if selected else None,
         "sizing": sizing_payload(),
         "superpixels_available": SUPERPIXELS_AVAILABLE,
     })

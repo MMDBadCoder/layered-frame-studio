@@ -19,6 +19,10 @@ a physical frame at a chosen size with an estimated price.
 2. **Size & price** — choose a frame width; the height follows the photo's aspect ratio automatically. An approximate price is shown live.
 3. **Order** — sign in (in a modal, so the render is never lost), confirm, submit.
 4. **Review** — admins triage orders in the Django admin panel and set the final price.
+5. **Produce** — admins export any order as a printable **3D STL plate**, one terrace per colour.
+
+مدیران همچنین تعیین می‌کنند صفحهٔ اصلی با چه تنظیماتی باز شود: پروفایل رنگی
+پیش‌فرض و همهٔ پارامترهای پردازش، بدون نیاز به تغییر کد.
 
 ---
 
@@ -100,6 +104,19 @@ sudo ./scripts/uninstall.sh                  # حذف سرویس، حفظ داد
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | ساختار کد، مدل داده، API، تصمیم‌های فنی |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | نصب، پشتیبان‌گیری، بازیابی، عیب‌یابی |
 | [`CHANGELOG.md`](CHANGELOG.md) | تاریخچهٔ تغییرات |
+
+---
+
+## مدل سه‌بعدی / 3D export
+
+از صفحهٔ هر سفارش در پنل مدیریت، دکمهٔ **دانلود فایل STL**.
+
+هر رنگ پالت یک پله می‌شود: لایهٔ ۱ به ارتفاع `x`، لایهٔ ۲ به `2x`، لایهٔ ۳ به
+`3x` و … مقدار `x` («ارتفاع هر لایه»)، جهت آن و دقت مدل در **تنظیمات فروشگاه**
+قابل تغییر است. ابعاد صفحه دقیقاً برابر اندازهٔ سفارش‌داده‌شدهٔ قاب است.
+
+خروجی یک جسم بستهٔ manifold با نرمال‌های رو به بیرون است — آمادهٔ برش در هر
+اسلایسر. جزئیات الگوریتم در [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 

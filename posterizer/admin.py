@@ -30,15 +30,78 @@ class SiteSettingsAdmin(admin.ModelAdmin):
                 "description": "هزینهٔ برآوردی = مساحت قاب × قیمت هر سانتی‌متر مربع",
             },
         ),
+        (
+            "تنظیمات پیش‌فرض ساخت تصویر",
+            {
+                "fields": (
+                    "default_profile",
+                    "default_preprocess_method",
+                    ("default_gaussian_kernel_size", "default_median_kernel_size"),
+                    ("default_bilateral_d", "default_bilateral_sigma_color", "default_bilateral_sigma_space"),
+                    "default_postprocess_method",
+                    ("default_morph_kernel_size", "default_min_region_size", "default_majority_window_size"),
+                    ("default_preserve_edges", "default_use_superpixels", "default_superpixel_region_size"),
+                ),
+                "description": (
+                    "این مقادیر همان چیزی است که کاربر هنگام باز کردن صفحهٔ اصلی می‌بیند. "
+                    "کاربر می‌تواند آن‌ها را تغییر دهد؛ این‌ها فقط نقطهٔ شروع هستند."
+                ),
+            },
+        ),
+        (
+            "خروجی سه‌بعدی (STL)",
+            {
+                "fields": ("stl_layer_height_mm", "stl_invert_heights", "stl_max_resolution", "stl_preview"),
+                "description": (
+                    "مدل سه‌بعدی از روی تصویر لایه‌ای سفارش ساخته می‌شود: هر رنگ یک "
+                    "پله با ارتفاع مخصوص خودش. فایل STL از صفحهٔ هر سفارش قابل دانلود است."
+                ),
+            },
+        ),
         (None, {"fields": ("updated_at",)}),
     )
-    readonly_fields = ("updated_at", "price_examples")
+    readonly_fields = ("updated_at", "price_examples", "stl_preview")
 
     def has_add_permission(self, request):
         return not SiteSettings.objects.exists()
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+    @admin.display(description="ارتفاع لایه‌ها با تنظیمات فعلی")
+    def stl_preview(self, obj):
+        if not obj or not obj.pk:
+            return "—"
+
+        sample = ColorProfile.objects.filter(is_active=True).order_by("-num_layers").first()
+        layers = sample.num_layers if sample else 4
+        heights = obj.layer_heights_mm(layers)
+        colors = sample.color_list() if sample else ["#000000"] * layers
+
+        rows = [
+            (
+                f"لایهٔ {index + 1}",
+                format_html(
+                    '<span style="display:inline-block;width:18px;height:18px;border-radius:4px;'
+                    'border:1px solid rgba(0,0,0,.25);background:{};vertical-align:middle"></span>',
+                    color,
+                ),
+                f"{height:g} میلی‌متر",
+            )
+            for index, (color, height) in enumerate(zip(colors, heights))
+        ]
+        return format_html(
+            '<table style="border-collapse:collapse">{}</table>'
+            '<p style="color:#666;margin-top:6px">نمونه بر اساس پروفایل «{}»</p>',
+            format_html_join(
+                "",
+                '<tr><td style="padding:2px 14px 2px 0">{}</td>'
+                '<td style="padding:2px 14px 2px 0">{}</td>'
+                '<td style="padding:2px 0;font-weight:700">{}</td></tr>',
+                rows,
+            ),
+            sample.name if sample else "—",
+        )
 
     @admin.display(description="نمونهٔ قیمت با تنظیمات فعلی")
     def price_examples(self, obj):
@@ -148,6 +211,7 @@ class OrderAdmin(admin.ModelAdmin):
         "cost_column",
         "status",
         "submitted_at",
+        "stl_link",
     )
     list_display_links = ("id", "thumbnail")
     list_editable = ("status",)
@@ -180,6 +244,7 @@ class OrderAdmin(admin.ModelAdmin):
         "frame_size",
         "area_display",
         "price_breakdown",
+        "stl_panel",
     )
 
     fieldsets = (
@@ -204,6 +269,16 @@ class OrderAdmin(admin.ModelAdmin):
         (
             "مشخصات ساخت",
             {"fields": ("profile_name", "num_layers", "palette", "settings_table")},
+        ),
+        (
+            "مدل سه‌بعدی",
+            {
+                "fields": ("stl_panel",),
+                "description": (
+                    "هر رنگ یک پله با ارتفاع مخصوص خودش می‌شود. "
+                    "ارتفاع پایه و جهت آن در «تنظیمات فروشگاه» قابل تغییر است."
+                ),
+            },
         ),
         (
             "بررسی",
@@ -279,6 +354,60 @@ class OrderAdmin(admin.ModelAdmin):
                 format_toman(obj.estimated_cost),
             )
         return format_html('<span title="برآوردی">{} (برآوردی)</span>', format_toman(obj.estimated_cost))
+
+    @admin.display(description="مدل سه‌بعدی")
+    def stl_link(self, obj):
+        if not obj.result_image:
+            return "—"
+        return format_html(
+            '<a href="{}" download style="white-space:nowrap">دانلود STL</a>',
+            reverse("order_stl", args=[obj.pk]),
+        )
+
+    @admin.display(description="ساخت فایل STL")
+    def stl_panel(self, obj):
+        if not obj.pk or not obj.result_image:
+            return "—"
+
+        site = SiteSettings.load()
+        colors = obj.colors or []
+        heights = site.layer_heights_mm(len(colors)) if colors else []
+
+        rows = [
+            (
+                format_html(
+                    '<span style="display:inline-block;width:18px;height:18px;border-radius:4px;'
+                    'border:1px solid rgba(0,0,0,.25);background:{};vertical-align:middle"></span>',
+                    color,
+                ),
+                f"لایهٔ {index + 1}",
+                f"{height:g} میلی‌متر",
+            )
+            for index, (color, height) in enumerate(zip(colors, heights))
+        ]
+
+        size_note = (
+            f"ابعاد صفحه: {format_cm(obj.width_cm)} × {format_cm(obj.height_cm)} سانتی‌متر"
+            if obj.width_cm
+            else "این سفارش اندازه ندارد؛ از اندازهٔ پیش‌فرض استفاده می‌شود."
+        )
+
+        return format_html(
+            '<a class="button" href="{}" download '
+            'style="display:inline-block;margin-bottom:10px">⬇ دانلود فایل STL</a>'
+            '<table style="border-collapse:collapse">{}</table>'
+            '<p style="color:#666;margin-top:6px">{}<br>حداکثر دقت: {} پیکسل</p>',
+            reverse("order_stl", args=[obj.pk]),
+            format_html_join(
+                "",
+                '<tr><td style="padding:2px 10px 2px 0">{}</td>'
+                '<td style="padding:2px 14px 2px 0">{}</td>'
+                '<td style="padding:2px 0;font-weight:700">{}</td></tr>',
+                rows,
+            ),
+            size_note,
+            site.stl_max_resolution,
+        )
 
     @admin.display(description="محاسبهٔ هزینه")
     def price_breakdown(self, obj):

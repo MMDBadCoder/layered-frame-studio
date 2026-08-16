@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}قاب عکس دوبعدی — استودیو ساخت تصاویر لایه‌ای{% endblock %}
+{% block title %}قاب عکس دوبعدی{% endblock %}
 
 {% block content %}
 <div class="app">
@@ -90,7 +90,7 @@
             <label for="profile_id">پروفایل مورد نظر خود را انتخاب کنید</label>
             <select id="profile_id" name="profile_id">
               {% for profile in profiles %}
-                <option value="{{ profile.id }}">{{ profile.name }}</option>
+                <option value="{{ profile.id }}" {% if profile.id == selected_profile_id %}selected{% endif %}>{{ profile.name }}</option>
               {% endfor %}
             </select>
             <div class="palette" id="palettePreview"></div>

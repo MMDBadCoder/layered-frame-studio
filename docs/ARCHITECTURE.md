@@ -34,8 +34,9 @@ accounts/            کاربر سفارشی و احراز هویت
   management/commands/create_admin.py
 posterizer/          استودیو، پروفایل‌ها، سفارش‌ها
   models.py          SiteSettings, ColorProfile, ProfileLayer, Order
-  views.py           صفحه‌ها + API پردازش و ثبت سفارش
+  views.py           صفحه‌ها + API پردازش و ثبت سفارش + دانلود STL
   admin.py           پنل مدیریت فارسی
+  stl.py             ساخت مدل سه‌بعدی از تصویر لایه‌ای
   jalali.py          تاریخ شمسی، ارقام فارسی، قالب‌بندی تومان
   templatetags/      فیلترهای jalali، toman، cm، fa_digits
   management/commands/cleanup_uploads.py
@@ -57,9 +58,12 @@ User (accounts)
  └─ is_superuser → مدیر کل
 
 SiteSettings (تک‌نمونه، pk=1)
- ├─ min/max_width_cm، min/max_height_cm
- ├─ price_per_cm2
- └─ cost_rounding
+ ├─ اندازه: min/max_width_cm، min/max_height_cm
+ ├─ قیمت: price_per_cm2، cost_rounding
+ ├─ پیش‌فرض‌های استودیو: default_profile، default_preprocess_method،
+ │    default_*_kernel_size، default_postprocess_method، default_min_region_size،
+ │    default_preserve_edges، default_use_superpixels، …
+ └─ سه‌بعدی: stl_layer_height_mm، stl_invert_heights، stl_max_resolution
 
 ColorProfile
  ├─ name، description، num_layers، is_active، sort_order
@@ -90,6 +94,7 @@ Order
 | `/` | GET | استودیو (عمومی) |
 | `/orders/` | GET | سفارش‌های من (نیازمند ورود) |
 | `/orders/<id>/image/<kind>/` | GET | تصویر سفارش (صاحب سفارش یا مدیر) |
+| `/orders/<id>/stl/` | GET | دانلود مدل سه‌بعدی (فقط مدیر) |
 | `/api/config` | GET | تنظیمات پیش‌فرض، پروفایل‌ها، محدودهٔ اندازه |
 | `/api/process` | POST | پردازش تصویر → data URL + محدودهٔ اندازه |
 | `/api/orders/create` | POST | ثبت سفارش |
@@ -117,6 +122,48 @@ PNG رنگی
 ```
 
 `main.py` هیچ وابستگی‌ای به جنگو ندارد و مستقل هم قابل استفاده است.
+
+---
+
+## ۵٫۵ ساخت مدل سه‌بعدی (`posterizer/stl.py`)
+
+```
+تصویر لایه‌ای سفارش
+   ↓ کوچک‌سازی با nearest (بدون درون‌یابی، تا رنگ جدید ساخته نشود)
+   ↓ نگاشت هر پیکسل به نزدیک‌ترین رنگ پالت → نقشهٔ شاخص لایه
+   ↓ اصلاح نقاط زینی (resolve_saddles)
+   ↓ شاخص → ارتفاع (لایهٔ n → n × ارتفاع پایه)
+   ↓ ساخت مش: رویه + کف + دیوارها
+STL دودویی
+```
+
+### دو نکتهٔ ظریف که مش را قابل چاپ می‌کنند
+
+**۱. تقسیم دیوارها روی ارتفاع‌های استاندارد.** جایی که چهار سلول با ارتفاع‌های
+متفاوت به هم می‌رسند، دیوارهای اطراف آن گوشه بازه‌های ارتفاعی متفاوتی دارند.
+اگر هر دیوار یک مستطیل یکپارچه باشد، لبه‌ها دقیقاً بر هم منطبق نمی‌شوند و
+T-junction می‌سازند. راه‌حل: هر دیوار روی همهٔ ارتفاع‌های ممکن (که تعدادشان
+برابر تعداد لایه‌هاست) تکه‌تکه می‌شود.
+
+**۲. اصلاح نقاط زینی.** در بلوک ۲×۲ زیر
+
+```
+A B
+C D
+```
+
+اگر یک قطر کاملاً بالاتر از قطر دیگر باشد، در هر برش افقی بین آن دو، مقطع
+دو مربع می‌شود که فقط از یک نقطه به هم چسبیده‌اند — یعنی جسم روی یک خط
+باریک می‌شود و چاپ‌شدنی نیست. `resolve_saddles` گوشهٔ پایین‌تر را بالا می‌برد
+تا این باریک‌شدگی پر شود. چون فقط «بالا بردن» انجام می‌شود، حلقه یکنوا و
+پایان‌پذیر است.
+
+رویهٔ بالا عمداً به نوارهای عریض ادغام **نمی‌شود**: ادغام باعث T-junction با
+دیوارهای تک‌سلولی می‌شد.
+
+آزمون `mesh_is_closed` بررسی می‌کند هر یال جهت‌دار دقیقاً یک بار و جفت
+معکوسش هم دقیقاً یک بار وجود داشته باشد — که هم بسته بودن و هم یکنواختی
+جهت نرمال‌ها را تضمین می‌کند.
 
 ### ذخیرهٔ موقت
 - `uploads/<id>.bin` — تصویر اصلی نشست
@@ -167,7 +214,7 @@ PNG رنگی
 .venv/bin/python manage.py test
 ```
 
-۳۹ آزمون در `posterizer/tests.py`:
+۵۶ آزمون در `posterizer/tests.py`:
 
 | کلاس | پوشش |
 |---|---|
@@ -175,5 +222,8 @@ PNG رنگی
 | `AuthTests` | ثبت‌نام، ورود، **حفظ تصویر هنگام ورود** |
 | `OrderTests` | ثبت، سهمیهٔ ۳تایی، حریم خصوصی تصاویر |
 | `FrameSizeAndCostTests` | نسبت، محدوده، قیمت، ضدّ دستکاری |
+| `RenderDefaultsTests` | پیش‌فرض‌های قابل تنظیم و اولویت انتخاب کاربر |
+| `StlExportTests` | ارتفاع لایه‌ها، ابعاد، **watertight بودن**، دسترسی |
 | `ColorProfileTests` | همگام‌سازی لایه‌ها، پروفایل غیرفعال |
+| `PageTitleTests` | کوتاه بودن عنوان صفحه |
 | `AdminPanelTests` | دسترسی، تغییر وضعیت، عملیات گروهی |

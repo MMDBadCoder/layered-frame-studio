@@ -1,5 +1,6 @@
 import io
 import shutil
+import struct
 import tempfile
 from decimal import Decimal
 from pathlib import Path
@@ -13,6 +14,7 @@ from django.test import Client, TestCase, override_settings
 from PIL import Image
 
 from .models import ColorProfile, Order, SiteSettings
+from .stl import build_mesh, layer_index_map, mesh_is_closed, resolve_saddles
 
 User = get_user_model()
 
@@ -550,6 +552,207 @@ class ColorProfileTests(StudioTestCase):
             "/api/process", {"profile_id": profile.id, "image": upload()}
         )
         self.assertEqual(response.status_code, 400)
+
+
+class RenderDefaultsTests(StudioTestCase):
+    """The settings the studio opens with are admin-configurable."""
+
+    def test_home_page_uses_the_admin_configured_defaults(self):
+        site = SiteSettings.load()
+        site.default_preprocess_method = "gaussian"
+        site.default_postprocess_method = "majority_filter"
+        site.default_gaussian_kernel_size = 9
+        site.default_min_region_size = 123
+        site.default_preserve_edges = False
+        site.save()
+
+        html = self.client.get("/").content.decode()
+        self.assertIn('<option value="gaussian" selected>', html)
+        self.assertIn('<option value="majority_filter" selected>', html)
+        self.assertIn('value="9"', html)
+        self.assertIn('value="123"', html)
+        self.assertNotIn('id="preserve_edges" name="preserve_edges" checked', html)
+
+    def test_defaults_apply_when_the_client_sends_nothing(self):
+        site = SiteSettings.load()
+        site.default_postprocess_method = "median"
+        site.default_median_kernel_size = 7
+        site.default_bilateral_d = 11
+        site.save()
+
+        response = self.client.post(
+            "/api/process", {"profile_id": self.profile.id, "image": upload()}
+        )
+        config = response.json()["config"]
+        self.assertEqual(config["postprocess_method"], "median")
+        self.assertEqual(config["median_kernel_size"], 7)
+        self.assertEqual(config["bilateral_d"], 11)
+
+    def test_user_choice_still_overrides_the_defaults(self):
+        site = SiteSettings.load()
+        site.default_preprocess_method = "gaussian"
+        site.save()
+
+        response = self.client.post(
+            "/api/process",
+            {"profile_id": self.profile.id, "image": upload(), "preprocess_method": "none"},
+        )
+        self.assertEqual(response.json()["config"]["preprocess_method"], "none")
+
+    def test_default_profile_is_preselected(self):
+        chosen = ColorProfile.objects.filter(is_active=True).order_by("-sort_order").first()
+        site = SiteSettings.load()
+        site.default_profile = chosen
+        site.save()
+
+        html = self.client.get("/").content.decode()
+        self.assertIn(f'<option value="{chosen.id}" selected>', html)
+
+        # …and it is what an upload without an explicit profile uses.
+        response = self.client.post("/api/process", {"image": upload()})
+        self.assertEqual(response.json()["profile"]["id"], chosen.id)
+
+    def test_inactive_default_profile_falls_back(self):
+        chosen = ColorProfile.objects.filter(is_active=True).first()
+        site = SiteSettings.load()
+        site.default_profile = chosen
+        site.save()
+
+        chosen.is_active = False
+        chosen.save()
+
+        response = self.client.post("/api/process", {"image": upload()})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(response.json()["profile"]["id"], chosen.id)
+
+    def test_config_api_reports_the_configured_defaults(self):
+        site = SiteSettings.load()
+        site.default_min_region_size = 321
+        site.save()
+
+        data = self.client.get("/api/config").json()
+        self.assertEqual(data["defaults"]["min_region_size"], 321)
+        self.assertIn("sizing", data)
+
+
+class StlExportTests(StudioTestCase):
+    """3D export: one terrace per colour, at admin-configured heights."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin = User.objects.create_superuser(
+            phone="09120000009", email="admin@example.com", password="AdminPass!234"
+        )
+        self.user = self.make_user()
+
+        client = Client()
+        client.force_login(self.user)
+        client.post(
+            "/api/process",
+            {"profile_id": self.profile.id, "image": upload(), "postprocess_method": "none"},
+        )
+        client.post(
+            "/api/orders/create",
+            {"profile_id": self.profile.id, "postprocess_method": "none", "width_cm": "40"},
+        )
+        self.order = Order.objects.get()
+
+    def test_layer_heights_are_multiples_of_the_configured_unit(self):
+        site = SiteSettings.load()
+        site.stl_layer_height_mm = Decimal("2.50")
+        site.save()
+
+        self.assertEqual(site.layer_heights_mm(4), [2.5, 5.0, 7.5, 10.0])
+        self.assertEqual(site.layer_heights_mm(3), [2.5, 5.0, 7.5])
+
+    def test_height_direction_can_be_inverted(self):
+        site = SiteSettings.load()
+        site.stl_layer_height_mm = Decimal("2.00")
+        site.stl_invert_heights = True
+        site.save()
+
+        # Darkest layer (index 0) becomes the tallest.
+        self.assertEqual(site.layer_heights_mm(4), [8.0, 6.0, 4.0, 2.0])
+
+    def test_admin_can_download_an_stl(self):
+        self.client.force_login(self.admin)
+        response = self.client.get(f"/orders/{self.order.pk}/stl/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "model/stl")
+        self.assertIn(f"order-{self.order.pk}.stl", response["Content-Disposition"])
+
+        payload = b"".join(response.streaming_content) if response.streaming else response.content
+        count = struct.unpack("<I", payload[80:84])[0]
+        self.assertGreater(count, 0)
+        # Binary STL: 80-byte header + 4-byte count + 50 bytes per triangle.
+        self.assertEqual(len(payload), 84 + count * 50)
+
+    def test_stl_is_a_closed_manifold_solid(self):
+        site = SiteSettings.load()
+        with Image.open(self.order.result_image.path) as image:
+            indices = layer_index_map(image, self.order.colors, 120)
+
+        indices, _ = resolve_saddles(indices)
+        heights = np.array(site.layer_heights_mm(len(self.order.colors)))[indices]
+        builder = build_mesh(heights, 400.0, 300.0, levels=site.layer_heights_mm(len(self.order.colors)))
+
+        self.assertTrue(mesh_is_closed(builder), "exported mesh must be watertight")
+
+    def test_model_dimensions_follow_the_ordered_frame_size(self):
+        site = SiteSettings.load()
+        site.stl_layer_height_mm = Decimal("3.00")
+        site.save()
+
+        self.client.force_login(self.admin)
+        response = self.client.get(f"/orders/{self.order.pk}/stl/")
+
+        # Order is 40 x 30 cm -> 400 x 300 mm; 4 layers x 3 mm -> 12 mm tallest.
+        self.assertEqual(response["X-Model-Size-Mm"], "400.0x300.0x12.0")
+
+    def test_saddle_repair_keeps_the_picture_recognisable(self):
+        """Repairs must be rare on a real posterized image, not wholesale."""
+        with Image.open(self.order.result_image.path) as image:
+            indices = layer_index_map(image, self.order.colors, 200)
+
+        repaired_indices, changed = resolve_saddles(indices)
+        self.assertLess(changed / indices.size, 0.05)
+        self.assertEqual(indices.shape, repaired_indices.shape)
+
+    def test_ordinary_users_cannot_download_stl(self):
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get(f"/orders/{self.order.pk}/stl/").status_code, 404)
+
+    def test_anonymous_cannot_download_stl(self):
+        response = Client().get(f"/orders/{self.order.pk}/stl/")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("login=1", response["Location"])
+
+    def test_stl_works_for_orders_placed_before_sizing_existed(self):
+        self.order.width_cm = None
+        self.order.height_cm = None
+        self.order.save()
+
+        self.client.force_login(self.admin)
+        response = self.client.get(f"/orders/{self.order.pk}/stl/")
+        self.assertEqual(response.status_code, 200)
+
+    def test_admin_pages_expose_the_download_link(self):
+        self.client.force_login(self.admin)
+
+        listing = self.client.get("/admin/posterizer/order/")
+        self.assertContains(listing, f"/orders/{self.order.pk}/stl/")
+
+        detail = self.client.get(f"/admin/posterizer/order/{self.order.pk}/change/")
+        self.assertContains(detail, "دانلود فایل STL")
+
+
+class PageTitleTests(StudioTestCase):
+    def test_titles_are_short_enough_for_a_browser_tab(self):
+        html = self.client.get("/").content.decode()
+        title = html.split("<title>")[1].split("</title>")[0]
+        self.assertEqual(title, "قاب عکس دوبعدی")
+        self.assertLess(len(title), 25)
 
 
 class AdminPanelTests(StudioTestCase):
