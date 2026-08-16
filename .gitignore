@@ -1,0 +1,33 @@
+# ---- Runtime state (NEVER commit: contains real customer data) -------------
+db.sqlite3
+db.sqlite3-journal
+db.sqlite3-wal
+db.sqlite3-shm
+media/
+uploads/
+backups/
+staticfiles/
+
+# Secret key and per-server configuration
+.env
+
+# ---- Python ----------------------------------------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ---- Editors / OS ----------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ---- Scratch ---------------------------------------------------------------
+output.png
+*.log

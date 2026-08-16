@@ -1,0 +1,65 @@
+{% comment %}
+Sign-in / sign-up dialog. Everything happens over AJAX so the page never
+reloads and the image the visitor just built is never lost.
+{% endcomment %}
+<div class="modal-backdrop hidden" id="authModal" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="authTitle">ورود به حساب کاربری</h2>
+      <button type="button" class="modal-close" id="authClose" aria-label="بستن">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <p class="modal-intro" id="authIntro">برای ادامه وارد شوید یا یک حساب کاربری بسازید.</p>
+
+    <div class="modal-tabs" role="tablist">
+      <button type="button" class="modal-tab is-active" data-auth-tab="login" role="tab">ورود</button>
+      <button type="button" class="modal-tab" data-auth-tab="register" role="tab">ثبت‌نام</button>
+    </div>
+
+    <div class="modal-alert hidden" id="authAlert" role="alert"></div>
+
+    <form class="modal-form" id="loginForm" novalidate>
+      <div class="field" data-field="identifier">
+        <label for="loginIdentifier">شماره موبایل یا ایمیل</label>
+        <input type="text" id="loginIdentifier" name="identifier" dir="ltr" autocomplete="username" placeholder="09123456789">
+      </div>
+      <div class="field" data-field="password">
+        <label for="loginPassword">رمز عبور</label>
+        <input type="password" id="loginPassword" name="password" dir="ltr" autocomplete="current-password">
+      </div>
+      <div class="modal-actions">
+        <button type="submit" class="btn btn-primary" data-submit>ورود به حساب</button>
+      </div>
+    </form>
+
+    <form class="modal-form hidden" id="registerForm" novalidate>
+      <div class="field" data-field="full_name">
+        <label for="regFullName">نام و نام خانوادگی <span style="color:var(--text-muted)">(اختیاری)</span></label>
+        <input type="text" id="regFullName" name="full_name" autocomplete="name">
+      </div>
+      <div class="field" data-field="phone">
+        <label for="regPhone">شماره موبایل</label>
+        <input type="tel" id="regPhone" name="phone" dir="ltr" autocomplete="tel" placeholder="09123456789">
+      </div>
+      <div class="field" data-field="email">
+        <label for="regEmail">ایمیل</label>
+        <input type="email" id="regEmail" name="email" dir="ltr" autocomplete="email" placeholder="name@example.com">
+      </div>
+      <div class="field" data-field="password1">
+        <label for="regPassword1">رمز عبور</label>
+        <input type="password" id="regPassword1" name="password1" dir="ltr" autocomplete="new-password">
+      </div>
+      <div class="field" data-field="password2">
+        <label for="regPassword2">تکرار رمز عبور</label>
+        <input type="password" id="regPassword2" name="password2" dir="ltr" autocomplete="new-password">
+      </div>
+      <div class="modal-actions">
+        <button type="submit" class="btn btn-primary" data-submit>ساخت حساب کاربری</button>
+      </div>
+    </form>
+
+    <p class="modal-note">تصویری که ساخته‌اید در طول ورود حفظ می‌شود.</p>
+  </div>
+</div>

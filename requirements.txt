@@ -1,0 +1,13 @@
+# Image pipeline.
+# opencv-python-headless is the same OpenCV build without the GUI/X11 deps,
+# which is what a server needs; swap for opencv-python on a desktop machine.
+opencv-python-headless
+numpy
+pillow
+scikit-image
+scipy
+
+# Web application.
+django
+gunicorn        # production WSGI server used by the systemd service
+whitenoise      # serves /static/ from gunicorn, so nginx is optional

@@ -1,0 +1,616 @@
+import io
+import shutil
+import tempfile
+from decimal import Decimal
+from pathlib import Path
+from unittest import mock
+
+import numpy as np
+from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import Client, TestCase, override_settings
+from PIL import Image
+
+from .models import ColorProfile, Order, SiteSettings
+
+User = get_user_model()
+
+TEMP_MEDIA = tempfile.mkdtemp(prefix="pf-test-media-")
+
+
+def make_image_bytes(size=(120, 90)) -> bytes:
+    """A small gradient image, enough to exercise the whole pipeline."""
+    width, height = size
+    gradient = np.tile(np.linspace(0, 255, width, dtype=np.uint8), (height, 1))
+    out = io.BytesIO()
+    Image.fromarray(gradient, mode="L").convert("RGB").save(out, format="PNG")
+    return out.getvalue()
+
+
+def upload(name="test.png"):
+    return SimpleUploadedFile(name, make_image_bytes(), content_type="image/png")
+
+
+def decode_data_url(url: str) -> Image.Image:
+    import base64
+
+    payload = url.split(",", 1)[1]
+    return Image.open(io.BytesIO(base64.b64decode(payload)))
+
+
+@override_settings(MEDIA_ROOT=TEMP_MEDIA)
+class StudioTestCase(TestCase):
+    """Base class that keeps uploads and media out of the real project dirs."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(TEMP_MEDIA, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        self.uploads = Path(tempfile.mkdtemp(prefix="pf-test-uploads-"))
+        patcher = mock.patch("posterizer.views.UPLOAD_DIR", self.uploads)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(shutil.rmtree, self.uploads, ignore_errors=True)
+
+        self.profile = ColorProfile.objects.filter(is_active=True).first()
+
+    def make_user(self, phone="09121112233", email="user@example.com", password="TestPass!234"):
+        return User.objects.create_user(phone=phone, email=email, password=password)
+
+    def render_image(self, client=None):
+        """Upload + process, returning the JSON payload."""
+        client = client or self.client
+        response = client.post(
+            "/api/process",
+            {"profile_id": self.profile.id, "image": upload(), "postprocess_method": "none"},
+        )
+        self.assertEqual(response.status_code, 200, response.content[:400])
+        return response.json()
+
+
+class PublicStudioTests(StudioTestCase):
+    def test_home_page_is_open_to_anonymous_visitors(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn('lang="fa"', html)
+        self.assertIn('dir="rtl"', html)
+        self.assertIn("ثبت سفارش", html)
+        self.assertIn(self.profile.name, html)
+
+        # The auth modal ships with the page but stays closed: an anonymous
+        # visitor is never blocked from uploading and rendering.
+        self.assertIn('id="authModal"', html)
+        self.assertIn('class="modal-backdrop hidden" id="authModal"', html)
+        self.assertIn('"openLogin": false', html)
+
+        # Template comments must not leak into the response.
+        self.assertNotIn("{#", html)
+        self.assertNotIn("{%", html)
+
+    def test_seed_profiles_exist(self):
+        self.assertGreaterEqual(ColorProfile.objects.filter(is_active=True).count(), 3)
+        for profile in ColorProfile.objects.all():
+            self.assertEqual(len(profile.color_list()), profile.num_layers)
+
+    def test_anonymous_can_render_an_image(self):
+        data = self.render_image()
+        self.assertIn("result_url", data)
+        self.assertEqual(data["profile"]["id"], self.profile.id)
+        self.assertEqual(data["config"]["num_levels"], self.profile.num_layers)
+
+    def test_render_uses_the_profile_colours(self):
+        data = self.render_image()
+        image = decode_data_url(data["result_url"]).convert("RGB")
+        used = {tuple(c) for c in np.array(image).reshape(-1, 3)}
+
+        expected = {
+            tuple(int(color.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+            for color in self.profile.color_list()
+        }
+        self.assertTrue(used.issubset(expected), f"unexpected colours: {used - expected}")
+
+    def test_layer_count_comes_from_the_profile_not_the_client(self):
+        five_layer = ColorProfile.objects.filter(num_layers=5, is_active=True).first()
+        self.assertIsNotNone(five_layer, "expected a seeded 5-layer profile")
+
+        response = self.client.post(
+            "/api/process",
+            {
+                "profile_id": five_layer.id,
+                "image": upload(),
+                "postprocess_method": "none",
+                "num_levels": 2,  # a tampered client value must be ignored
+            },
+        )
+        data = response.json()
+        self.assertEqual(data["config"]["num_levels"], 5)
+
+    def test_invalid_profile_is_rejected(self):
+        response = self.client.post("/api/process", {"profile_id": 99999, "image": upload()})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("پروفایل", response.json()["error"])
+
+    def test_invalid_image_is_rejected(self):
+        bad = SimpleUploadedFile("x.png", b"definitely-not-an-image", content_type="image/png")
+        response = self.client.post("/api/process", {"profile_id": self.profile.id, "image": bad})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("معتبر", response.json()["error"])
+
+
+class AuthTests(StudioTestCase):
+    def test_register_creates_a_user_and_signs_them_in(self):
+        response = self.client.post(
+            "/api/auth/register",
+            {
+                "full_name": "علی رضایی",
+                "phone": "۰۹۱۲۳۴۵۶۷۸۹",  # Persian digits must be accepted
+                "email": "Ali@Example.com",
+                "password1": "StrongPass!234",
+                "password2": "StrongPass!234",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.content[:400])
+        data = response.json()
+        self.assertTrue(data["ok"])
+        self.assertTrue(data["user"]["is_authenticated"])
+
+        user = User.objects.get(phone="09123456789")
+        self.assertEqual(user.email, "ali@example.com")
+        self.assertFalse(user.is_staff)
+
+    def test_register_rejects_mismatched_passwords_and_duplicates(self):
+        self.make_user(phone="09120000001", email="dupe@example.com")
+
+        response = self.client.post(
+            "/api/auth/register",
+            {
+                "phone": "09120000001",
+                "email": "dupe@example.com",
+                "password1": "StrongPass!234",
+                "password2": "different",
+            },
+        )
+        self.assertEqual(response.status_code, 400)
+        errors = response.json()["errors"]
+        self.assertIn("phone", errors)
+        self.assertIn("email", errors)
+        self.assertIn("password2", errors)
+
+    def test_login_works_with_phone_or_email(self):
+        self.make_user(phone="09120000002", email="both@example.com", password="TestPass!234")
+
+        for identifier in ("09120000002", "both@example.com", "۰۹۱۲۰۰۰۰۰۰۲"):
+            client = Client()
+            response = client.post(
+                "/api/auth/login", {"identifier": identifier, "password": "TestPass!234"}
+            )
+            self.assertEqual(response.status_code, 200, f"failed for {identifier}")
+            self.assertTrue(response.json()["user"]["is_authenticated"])
+
+    def test_login_with_a_wrong_password_fails(self):
+        self.make_user(phone="09120000003", email="wrong@example.com")
+        response = self.client.post(
+            "/api/auth/login", {"identifier": "09120000003", "password": "nope"}
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_signing_in_keeps_the_image_that_was_already_built(self):
+        """The whole point of the modal: the render must survive the login."""
+        data = self.render_image()
+        image_id = self.client.session["image_id"]
+        self.assertTrue(image_id)
+
+        self.make_user(phone="09120000004", email="keep@example.com", password="TestPass!234")
+        response = self.client.post(
+            "/api/auth/login", {"identifier": "09120000004", "password": "TestPass!234"}
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Same uploaded image still attached to the (rotated) session…
+        self.assertEqual(self.client.session["image_id"], image_id)
+        # …and an order can be placed straight away, without re-uploading.
+        response = self.client.post(
+            "/api/orders/create",
+            {"profile_id": self.profile.id, "postprocess_method": "none", "width_cm": "40"},
+        )
+        self.assertEqual(response.status_code, 200, response.content[:400])
+        self.assertEqual(Order.objects.count(), 1)
+        self.assertEqual(data["profile"]["id"], self.profile.id)
+
+
+class OrderTests(StudioTestCase):
+    def setUp(self):
+        super().setUp()
+        self.user = self.make_user()
+        self.client.force_login(self.user)
+
+    def test_anonymous_order_is_refused_with_an_auth_flag(self):
+        client = Client()
+        client.post("/api/process", {"profile_id": self.profile.id, "image": upload()})
+        response = client.post("/api/orders/create", {"profile_id": self.profile.id})
+
+        self.assertEqual(response.status_code, 401)
+        self.assertTrue(response.json()["auth_required"])
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_order_stores_a_snapshot_of_the_render(self):
+        self.render_image()
+        response = self.client.post(
+            "/api/orders/create",
+            {
+                "profile_id": self.profile.id,
+                "postprocess_method": "none",
+                "note": "قاب چوبی",
+                "width_cm": "40",
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.content[:400])
+
+        order = Order.objects.get()
+        self.assertEqual(order.user, self.user)
+        self.assertEqual(order.status, Order.STATUS_PENDING)
+        self.assertEqual(order.note, "قاب چوبی")
+        self.assertEqual(order.profile_name, self.profile.name)
+        self.assertEqual(order.num_layers, self.profile.num_layers)
+        self.assertEqual(order.colors, self.profile.color_list())
+        self.assertTrue(order.result_image.name.endswith(".png"))
+        self.assertTrue(order.original_image.name.endswith(".png"))
+        self.assertGreater(order.result_image.size, 0)
+
+    def test_order_without_an_image_is_refused(self):
+        response = self.client.post("/api/orders/create", {"profile_id": self.profile.id})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("تصویری", response.json()["error"])
+
+    def test_at_most_three_unreviewed_orders(self):
+        self.render_image()
+        payload = {"profile_id": self.profile.id, "postprocess_method": "none", "width_cm": "40"}
+
+        for index in range(Order.MAX_UNREVIEWED):
+            response = self.client.post("/api/orders/create", payload)
+            self.assertEqual(response.status_code, 200, f"order {index + 1} failed")
+
+        response = self.client.post("/api/orders/create", payload)
+        self.assertEqual(response.status_code, 400)
+        body = response.json()
+        self.assertTrue(body["limit_reached"])
+        self.assertEqual(Order.objects.count(), Order.MAX_UNREVIEWED)
+
+        # Reviewing one frees a slot again.
+        order = Order.objects.first()
+        order.status = Order.STATUS_APPROVED
+        order.save(update_fields=["status"])
+
+        response = self.client.post("/api/orders/create", payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Order.objects.count(), Order.MAX_UNREVIEWED + 1)
+
+    def test_reviewed_statuses_do_not_count_towards_the_limit(self):
+        self.render_image()
+        for status in (Order.STATUS_APPROVED, Order.STATUS_REJECTED):
+            Order.objects.create(user=self.user, status=status, num_layers=4)
+
+        self.assertEqual(Order.objects.unreviewed_count(self.user), 0)
+        response = self.client.post(
+            "/api/orders/create",
+            {"profile_id": self.profile.id, "postprocess_method": "none", "width_cm": "40"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_my_orders_page_requires_login_and_lists_orders(self):
+        anonymous = Client()
+        response = anonymous.get("/orders/")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("login=1", response["Location"])
+
+        self.render_image()
+        self.client.post(
+            "/api/orders/create",
+            {"profile_id": self.profile.id, "postprocess_method": "none", "width_cm": "40"},
+        )
+
+        response = self.client.get("/orders/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "سفارش‌های من")
+        self.assertContains(response, "در انتظار بررسی")
+
+    def test_order_images_are_private(self):
+        self.render_image()
+        self.client.post(
+            "/api/orders/create",
+            {"profile_id": self.profile.id, "postprocess_method": "none", "width_cm": "40"},
+        )
+        order = Order.objects.get()
+
+        response = self.client.get(f"/orders/{order.pk}/image/result/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "image/png")
+
+        other = Client()
+        other.force_login(self.make_user(phone="09129998877", email="other@example.com"))
+        self.assertEqual(other.get(f"/orders/{order.pk}/image/result/").status_code, 404)
+
+        staff = Client()
+        staff.force_login(
+            User.objects.create_user(
+                phone="09127776655", email="staff@example.com", password="x", is_staff=True
+            )
+        )
+        self.assertEqual(staff.get(f"/orders/{order.pk}/image/result/").status_code, 200)
+
+
+class FrameSizeAndCostTests(StudioTestCase):
+    """Frame sizing keeps the photo's ratio; pricing is computed server-side."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = self.make_user()
+        self.client.force_login(self.user)
+        self.site = SiteSettings.load()
+        # The fixture image is 120x90 -> ratio 4:3.
+        self.ratio = Decimal("120") / Decimal("90")
+
+    def order_payload(self, **extra):
+        payload = {"profile_id": self.profile.id, "postprocess_method": "none", "width_cm": "40"}
+        payload.update(extra)
+        return payload
+
+    def test_process_reports_the_sizing_envelope(self):
+        data = self.render_image()
+        sizing = data["sizing"]
+
+        self.assertEqual(sizing["image_width_px"], 120)
+        self.assertEqual(sizing["image_height_px"], 90)
+        self.assertAlmostEqual(sizing["ratio"], 120 / 90)
+        self.assertTrue(sizing["fits"])
+
+        # A 4:3 photo cannot be wider than max_height * ratio.
+        expected_min = max(float(self.site.min_width_cm), float(self.site.min_height_cm) * (120 / 90))
+        self.assertAlmostEqual(sizing["effective_min_width_cm"], round(expected_min, 1))
+        self.assertLessEqual(sizing["effective_max_width_cm"], float(self.site.max_width_cm))
+
+    def test_height_is_derived_from_the_ratio_and_priced(self):
+        self.render_image()
+        response = self.client.post("/api/orders/create", self.order_payload(width_cm="40"))
+        self.assertEqual(response.status_code, 200, response.content[:400])
+
+        order = Order.objects.get()
+        self.assertEqual(order.width_cm, Decimal("40.0"))
+        self.assertEqual(order.height_cm, Decimal("30.0"))  # 40 / (4/3)
+        self.assertEqual(order.area_cm2, Decimal("1200.00"))
+        self.assertEqual(order.price_per_cm2, self.site.price_per_cm2)
+        self.assertEqual(order.estimated_cost, self.site.estimate_cost(40, 30))
+        self.assertEqual(order.estimated_cost, 1200 * self.site.price_per_cm2)
+
+    def test_client_cannot_dictate_the_height_or_the_price(self):
+        """A tampered height/cost must be ignored: both are recomputed."""
+        self.render_image()
+        response = self.client.post(
+            "/api/orders/create",
+            self.order_payload(
+                width_cm="40", height_cm="5", estimated_cost="1", final_cost="1", area_cm2="1"
+            ),
+        )
+        self.assertEqual(response.status_code, 200)
+
+        order = Order.objects.get()
+        self.assertEqual(order.height_cm, Decimal("30.0"))
+        self.assertEqual(order.estimated_cost, 1200 * self.site.price_per_cm2)
+        self.assertIsNone(order.final_cost)
+
+    def test_width_outside_the_allowed_range_is_refused(self):
+        self.render_image()
+
+        for bad in ("5", "500", "0", "-10"):
+            response = self.client.post("/api/orders/create", self.order_payload(width_cm=bad))
+            self.assertEqual(response.status_code, 400, f"width {bad} should be refused")
+            self.assertIn("عرض قاب", response.json()["error"])
+
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_width_is_required_and_must_be_numeric(self):
+        self.render_image()
+
+        response = self.client.post("/api/orders/create", self.order_payload(width_cm=""))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("اندازهٔ قاب", response.json()["error"])
+
+        response = self.client.post("/api/orders/create", self.order_payload(width_cm="abc"))
+        self.assertEqual(response.status_code, 400)
+
+    def test_persian_digits_are_accepted_for_the_width(self):
+        self.render_image()
+        response = self.client.post("/api/orders/create", self.order_payload(width_cm="۴۰"))
+        self.assertEqual(response.status_code, 200, response.content[:400])
+        self.assertEqual(Order.objects.get().width_cm, Decimal("40.0"))
+
+    def test_admin_limits_are_respected_after_being_changed(self):
+        self.site.min_width_cm = Decimal("50.0")
+        self.site.max_width_cm = Decimal("60.0")
+        self.site.save()
+        self.render_image()
+
+        response = self.client.post("/api/orders/create", self.order_payload(width_cm="40"))
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.post("/api/orders/create", self.order_payload(width_cm="55"))
+        self.assertEqual(response.status_code, 200, response.content[:400])
+        self.assertEqual(Order.objects.get().width_cm, Decimal("55.0"))
+
+    def test_price_change_is_reflected_in_new_estimates(self):
+        self.render_image()
+        self.site.price_per_cm2 = 12000
+        self.site.save()
+
+        response = self.client.post("/api/orders/create", self.order_payload(width_cm="40"))
+        self.assertEqual(response.status_code, 200)
+
+        order = Order.objects.get()
+        self.assertEqual(order.price_per_cm2, 12000)
+        self.assertEqual(order.estimated_cost, 1200 * 12000)
+
+    def test_impossible_ratio_is_reported_and_refused(self):
+        """A very wide photo cannot fit limits that cap width tightly."""
+        self.site.max_width_cm = Decimal("40.0")
+        self.site.min_height_cm = Decimal("30.0")
+        self.site.save()
+
+        wide = SimpleUploadedFile("wide.png", make_image_bytes((1200, 100)), content_type="image/png")
+        response = self.client.post(
+            "/api/process", {"profile_id": self.profile.id, "image": wide, "postprocess_method": "none"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["sizing"]["fits"])
+
+        response = self.client.post("/api/orders/create", self.order_payload(width_cm="40"))
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("هیچ اندازه‌ای", response.json()["error"])
+
+    def test_cost_rounding(self):
+        self.site.price_per_cm2 = 1234
+        self.site.cost_rounding = 10000
+        self.site.save()
+
+        cost = self.site.estimate_cost(Decimal("40"), Decimal("30"))
+        self.assertEqual(cost % 10000, 0)
+        self.assertEqual(cost, round(1200 * 1234 / 10000) * 10000)
+
+    def test_final_cost_overrides_the_estimate_for_the_customer(self):
+        self.render_image()
+        self.client.post("/api/orders/create", self.order_payload(width_cm="40"))
+        order = Order.objects.get()
+
+        self.assertFalse(order.cost_is_final)
+        self.assertEqual(order.payable_cost, order.estimated_cost)
+
+        order.final_cost = 9_000_000
+        order.save(update_fields=["final_cost"])
+        order.refresh_from_db()
+
+        self.assertTrue(order.cost_is_final)
+        self.assertEqual(order.payable_cost, 9_000_000)
+
+        response = self.client.get("/orders/")
+        self.assertContains(response, "هزینهٔ نهایی")
+        self.assertContains(response, "تأییدشده توسط مدیر")
+
+    def test_customer_sees_the_estimate_on_the_orders_page(self):
+        self.render_image()
+        self.client.post("/api/orders/create", self.order_payload(width_cm="40"))
+
+        response = self.client.get("/orders/")
+        self.assertContains(response, "هزینهٔ تقریبی")
+        self.assertContains(response, "تقریبی — پس از بررسی نهایی می‌شود")
+        self.assertContains(response, "۴۰ × ۳۰ سانتی‌متر")
+
+    def test_site_settings_is_a_singleton(self):
+        second = SiteSettings(min_width_cm=Decimal("1.0"))
+        second.save()
+        self.assertEqual(SiteSettings.objects.count(), 1)
+        self.assertEqual(second.pk, 1)
+
+    def test_site_settings_validates_its_ranges(self):
+        site = SiteSettings.load()
+        site.min_width_cm = Decimal("90.0")
+        site.max_width_cm = Decimal("20.0")
+        with self.assertRaises(ValidationError):
+            site.full_clean()
+
+
+class ColorProfileTests(StudioTestCase):
+    def test_sync_layers_creates_trims_and_renumbers(self):
+        profile = ColorProfile.objects.create(name="آزمایشی", num_layers=3)
+        profile.sync_layers()
+        self.assertEqual(profile.layers.count(), 3)
+        self.assertEqual([layer.index for layer in profile.layers.all()], [0, 1, 2])
+
+        profile.num_layers = 5
+        profile.save()
+        profile.sync_layers()
+        self.assertEqual(profile.layers.count(), 5)
+
+        profile.num_layers = 2
+        profile.save()
+        profile.sync_layers()
+        self.assertEqual(profile.layers.count(), 2)
+        self.assertEqual([layer.index for layer in profile.layers.all()], [0, 1])
+
+    def test_inactive_profiles_are_hidden_from_users(self):
+        profile = ColorProfile.objects.create(name="غیرفعال", num_layers=3, is_active=False)
+        profile.sync_layers()
+
+        response = self.client.get("/")
+        self.assertNotContains(response, "غیرفعال")
+
+        response = self.client.post(
+            "/api/process", {"profile_id": profile.id, "image": upload()}
+        )
+        self.assertEqual(response.status_code, 400)
+
+
+class AdminPanelTests(StudioTestCase):
+    def setUp(self):
+        super().setUp()
+        self.admin = User.objects.create_superuser(
+            phone="09120000009", email="admin@example.com", password="AdminPass!234"
+        )
+        self.user = self.make_user()
+
+        client = Client()
+        client.force_login(self.user)
+        client.post(
+            "/api/process",
+            {"profile_id": self.profile.id, "image": upload(), "postprocess_method": "none"},
+        )
+        client.post(
+            "/api/orders/create",
+            {"profile_id": self.profile.id, "postprocess_method": "none", "width_cm": "40"},
+        )
+        self.order = Order.objects.get()
+
+        self.client.force_login(self.admin)
+
+    def test_ordinary_users_cannot_reach_the_admin_panel(self):
+        client = Client()
+        client.force_login(self.user)
+        response = client.get("/admin/", follow=True)
+        self.assertNotContains(response, "مدیریت سفارش‌ها", status_code=200)
+
+    def test_admin_can_list_and_open_orders_and_profiles(self):
+        for url in (
+            "/admin/",
+            "/admin/posterizer/order/",
+            f"/admin/posterizer/order/{self.order.pk}/change/",
+            "/admin/posterizer/colorprofile/",
+            "/admin/accounts/user/",
+        ):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200, f"{url} -> {response.status_code}")
+
+    def test_admin_status_change_is_stamped(self):
+        response = self.client.post(
+            f"/admin/posterizer/order/{self.order.pk}/change/",
+            {"status": Order.STATUS_APPROVED, "admin_note": "تأیید شد", "_save": "ذخیره"},
+        )
+        self.assertEqual(response.status_code, 302, response.content[:400])
+
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, Order.STATUS_APPROVED)
+        self.assertEqual(self.order.reviewed_by, self.admin)
+        self.assertIsNotNone(self.order.reviewed_at)
+
+    def test_admin_bulk_action_approves_orders(self):
+        response = self.client.post(
+            "/admin/posterizer/order/",
+            {"action": "mark_approved", "_selected_action": [str(self.order.pk)]},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, Order.STATUS_APPROVED)
+        self.assertEqual(self.order.reviewed_by, self.admin)

@@ -1,0 +1,52 @@
+{# Confirmation step shown before an order is actually submitted. #}
+<div class="modal-backdrop hidden" id="confirmModal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+  <div class="modal modal--wide">
+    <div class="modal-header">
+      <h2 id="confirmTitle">تأیید ثبت سفارش</h2>
+      <button type="button" class="modal-close" id="confirmClose" aria-label="بستن">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+
+    <div class="confirm-summary">
+      <img id="confirmThumb" alt="پیش‌نمایش سفارش">
+      <dl>
+        <div><dt>پروفایل رنگی:</dt> <dd id="confirmProfile">—</dd></div>
+        <div><dt>تعداد لایه‌ها:</dt> <dd id="confirmLayers">—</dd></div>
+        <div><dt>اندازهٔ قاب:</dt> <dd id="confirmSize">—</dd></div>
+        <div><dt>سفارش‌های بررسی‌نشده:</dt> <dd id="confirmQuota">—</dd></div>
+      </dl>
+    </div>
+
+    <div class="cost-box cost-box--confirm">
+      <div class="cost-row">
+        <span>هزینهٔ تقریبی</span>
+        <b id="confirmCost">—</b>
+      </div>
+      <p class="cost-note">
+        این مبلغ <b>تقریبی</b> و بر اساس مساحت قاب است. مبلغ قطعی پس از بررسی توسط مدیران اعلام می‌شود.
+      </p>
+    </div>
+
+    <div class="confirm-warning">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <span>
+        با تأیید، همین تصویر برای بررسی به مدیران ارسال می‌شود و تا پایان بررسی قابل تغییر نیست.
+        هر کاربر می‌تواند حداکثر <b id="confirmMax">۳</b> سفارش بررسی‌نشده داشته باشد.
+      </span>
+    </div>
+
+    <div class="field">
+      <label for="orderNote">توضیحات برای مدیر (اختیاری)</label>
+      <textarea id="orderNote" maxlength="2000" placeholder="مثلاً اندازهٔ قاب یا نکته‌ای که باید بدانیم"></textarea>
+    </div>
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" id="confirmCancel">انصراف</button>
+      <button type="button" class="btn btn-order" id="confirmSubmit">بله، سفارش را ثبت کن</button>
+    </div>
+  </div>
+</div>
