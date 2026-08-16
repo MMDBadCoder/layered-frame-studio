@@ -31,19 +31,19 @@ def read_manifest(archive: zipfile.ZipFile) -> dict:
     try:
         raw = archive.read(MANIFEST_NAME)
     except KeyError:
-        fail("این فایل یک پشتیبان معتبر Photo Frame 2D نیست (manifest.json ندارد).")
+        fail("this is not a valid Photo Frame 2D backup (no manifest.json).")
 
     try:
         manifest = json.loads(raw)
     except json.JSONDecodeError:
-        fail("فایل manifest.json خراب است.")
+        fail("manifest.json is corrupt.")
 
     if manifest.get("application") != "photo-frame-2d":
-        fail("این پشتیبان متعلق به برنامهٔ دیگری است.")
+        fail("this backup belongs to a different application.")
 
     version = manifest.get("format_version")
     if version not in SUPPORTED_FORMATS:
-        fail(f"نسخهٔ پشتیبان ({version}) پشتیبانی نمی‌شود.")
+        fail(f"backup format version {version} is not supported.")
 
     return manifest
 
@@ -53,7 +53,7 @@ def safe_members(archive: zipfile.ZipFile) -> list:
     members = []
     for name in archive.namelist():
         if name.startswith("/") or ".." in Path(name).parts:
-            fail(f"مسیر نامعتبر در فایل پشتیبان: {name}")
+            fail(f"unsafe path inside the backup: {name}")
         members.append(name)
     return members
 
@@ -63,9 +63,9 @@ def verify_database(path: Path) -> None:
     try:
         result = conn.execute("PRAGMA integrity_check").fetchone()
         if not result or result[0] != "ok":
-            fail(f"پایگاه دادهٔ داخل پشتیبان سالم نیست: {result}")
+            fail(f"the database inside the backup is not intact: {result}")
     except sqlite3.DatabaseError as exc:
-        fail(f"پایگاه دادهٔ داخل پشتیبان خوانده نشد: {exc}")
+        fail(f"could not read the database inside the backup: {exc}")
     finally:
         conn.close()
 
@@ -90,9 +90,9 @@ def main() -> int:
     archive_path = Path(args.archive).resolve()
 
     if not archive_path.exists():
-        fail(f"فایل پشتیبان پیدا نشد: {archive_path}")
+        fail(f"backup file not found: {archive_path}")
     if not zipfile.is_zipfile(archive_path):
-        fail("فایل داده‌شده یک آرشیو zip معتبر نیست.")
+        fail("the given file is not a valid zip archive.")
 
     with zipfile.ZipFile(archive_path) as archive:
         manifest = read_manifest(archive)

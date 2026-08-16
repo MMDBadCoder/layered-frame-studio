@@ -45,7 +45,7 @@ die()   { printf '\n%serror:%s %s\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
 
 require_root() {
   if [ "$(id -u)" -ne 0 ]; then
-    die "این اسکریپت باید با دسترسی root اجرا شود.  →  sudo $0 $*"
+    die "this script must be run as root.  →  sudo $0 $*"
   fi
 }
 

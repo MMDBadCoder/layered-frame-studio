@@ -23,14 +23,14 @@ RUN_AS=""
 
 usage() {
   cat <<'USAGE'
-استفاده: sudo ./scripts/install.sh [گزینه‌ها]
+Usage: sudo ./scripts/install.sh [options]
 
-  --port <n>       پورت سرویس (پیش‌فرض: 8080، یا مقدار موجود در .env)
-  --host <ip>      آدرس bind (پیش‌فرض: 0.0.0.0)
-  --user <name>    کاربری که سرویس با آن اجرا می‌شود (پیش‌فرض: مالک پوشهٔ پروژه)
-  --debug          اجرای سرویس در حالت DEBUG (فقط برای توسعه)
-  --skip-apt       نصب بسته‌های سیستمی را رد کن
-  -h, --help       همین راهنما
+  --port <n>       service port (default: 8080, or the value found in .env)
+  --host <ip>      bind address (default: 0.0.0.0)
+  --user <name>    user the service runs as (default: the project directory's owner)
+  --debug          run the service in DEBUG mode (development only)
+  --skip-apt       skip installing system packages
+  -h, --help       this help
 USAGE
 }
 
@@ -42,21 +42,21 @@ while [ $# -gt 0 ]; do
     --debug) WANT_DEBUG=1; shift ;;
     --skip-apt) SKIP_APT=1; shift ;;
     -h|--help) usage; exit 0 ;;
-    *) die "گزینهٔ ناشناخته: $1  (--help را ببینید)" ;;
+    *) die "unknown option: $1  (see --help)" ;;
   esac
 done
 
 require_root "$@"
 
-printf '%s\n' "${C_BOLD}نصب Photo Frame 2D${C_RESET}"
-info "پوشهٔ پروژه: $PROJECT_DIR"
-info "پورت: $PORT"
+printf '%s\n' "${C_BOLD}Installing Photo Frame 2D${C_RESET}"
+info "project directory: $PROJECT_DIR"
+info "port: $PORT"
 
 # --- 1. system packages ------------------------------------------------------
 
-step "بررسی بسته‌های سیستمی"
+step "Checking system packages"
 if [ "$SKIP_APT" -eq 1 ]; then
-  info "رد شد (--skip-apt)"
+  info "skipped (--skip-apt)"
 else
   MISSING=()
   dpkg -s python3-venv >/dev/null 2>&1 || MISSING+=(python3-venv)
@@ -64,48 +64,48 @@ else
   have curl || MISSING+=(curl)
 
   if [ ${#MISSING[@]} -eq 0 ]; then
-    ok "همهٔ بسته‌های لازم از قبل نصب هستند"
+    ok "all required packages are already installed"
   else
-    info "نصب: ${MISSING[*]}"
+    info "installing: ${MISSING[*]}"
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
     apt-get install -y -qq "${MISSING[@]}"
-    ok "بسته‌های سیستمی نصب شدند"
+    ok "system packages installed"
   fi
 fi
 
-have python3 || die "python3 روی این سیستم پیدا نشد."
+have python3 || die "python3 was not found on this system."
 info "$(python3 --version)"
 
 # --- 2. virtualenv -----------------------------------------------------------
 
-step "آماده‌سازی محیط مجازی پایتون"
+step "Preparing the Python virtualenv"
 if [ ! -x "$PYTHON_BIN" ]; then
   python3 -m venv "$VENV_DIR"
-  ok "محیط مجازی ساخته شد: $VENV_DIR"
+  ok "virtualenv created: $VENV_DIR"
 else
-  ok "محیط مجازی از قبل وجود دارد"
+  ok "virtualenv already exists"
 fi
 
 "$PIP_BIN" install --quiet --upgrade pip setuptools wheel
-info "نصب وابستگی‌ها (ممکن است چند دقیقه طول بکشد)…"
+info "installing dependencies (this can take a few minutes)…"
 "$PIP_BIN" install --quiet -r "${PROJECT_DIR}/requirements.txt"
-ok "وابستگی‌ها به‌روز هستند"
+ok "dependencies are up to date"
 
 # --- 3. .env -----------------------------------------------------------------
 
-step "پیکربندی (.env)"
+step "Configuration (.env)"
 if [ ! -f "$ENV_FILE" ]; then
   SECRET="$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_urlsafe(64))')"
   cat > "$ENV_FILE" <<EOF
-# Photo Frame 2D — تنظیمات محیط اجرا
-# این فایل شامل کلید امنیتی برنامه است؛ آن را منتشر نکنید.
+# Photo Frame 2D — runtime environment settings
+# This file holds the application's secret key; never publish it.
 PHOTO_FRAME_SECRET_KEY=${SECRET}
 PHOTO_FRAME_DEBUG=${WANT_DEBUG}
 PHOTO_FRAME_PORT=${PORT}
 EOF
   chmod 600 "$ENV_FILE"
-  ok "فایل .env ساخته شد (کلید امنیتی تصادفی تولید شد)"
+  ok ".env created (a random secret key was generated)"
 else
   # Keep the existing secret; only refresh the operational values.
   "$PYTHON_BIN" - "$ENV_FILE" "$PORT" "$WANT_DEBUG" <<'PY'
@@ -133,47 +133,47 @@ for key, value in values.items():
 path.write_text("\n".join(out) + "\n", encoding="utf-8")
 PY
   chmod 600 "$ENV_FILE"
-  ok "فایل .env موجود حفظ شد (کلید امنیتی دست‌نخورده)"
+  ok "existing .env kept (secret key untouched)"
 fi
 
 # --- 4. database & static ----------------------------------------------------
 
-step "پایگاه داده و فایل‌های ایستا"
+step "Database and static files"
 cd "$PROJECT_DIR"
 "$PYTHON_BIN" manage.py migrate --noinput
-ok "مهاجرت‌های پایگاه داده اعمال شد"
+ok "database migrations applied"
 
 PHOTO_FRAME_DEBUG=0 "$PYTHON_BIN" manage.py collectstatic --noinput --clear >/dev/null
-ok "فایل‌های ایستا جمع‌آوری شد"
+ok "static files collected"
 
 mkdir -p "$STATE_MEDIA" "$STATE_UPLOADS"
 
 # --- 5. ownership ------------------------------------------------------------
 
-step "مالکیت فایل‌ها"
+step "File ownership"
 if [ -z "$RUN_AS" ]; then
   RUN_AS="$(stat -c '%U' "$PROJECT_DIR")"
 fi
-id "$RUN_AS" >/dev/null 2>&1 || die "کاربر «$RUN_AS» وجود ندارد."
+id "$RUN_AS" >/dev/null 2>&1 || die "no such user: $RUN_AS"
 RUN_GROUP="$(id -gn "$RUN_AS")"
 chown -R "$RUN_AS:$RUN_GROUP" "$STATE_MEDIA" "$STATE_UPLOADS" 2>/dev/null || true
 [ -f "$STATE_DB" ] && chown "$RUN_AS:$RUN_GROUP" "$STATE_DB"
 chown "$RUN_AS:$RUN_GROUP" "$ENV_FILE"
-ok "سرویس با کاربر «$RUN_AS» اجرا می‌شود"
+ok "the service will run as $RUN_AS"
 
 # --- 6. systemd service ------------------------------------------------------
 
-step "سرویس systemd"
+step "systemd service"
 if ! has_systemd; then
-  warn "systemd در دسترس نیست؛ از این مرحله صرف‌نظر شد."
-  warn "برنامه را دستی اجرا کنید:  ./run.sh"
+  warn "systemd is not available; skipping this step."
+  warn "start the app manually:  ./run.sh"
 else
   WORKERS="$(( $(nproc 2>/dev/null || echo 1) * 2 + 1 ))"
   [ "$WORKERS" -gt 5 ] && WORKERS=5   # image work is CPU-heavy and memory-hungry
 
   cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=Photo Frame 2D — استودیو ساخت تصاویر لایه‌ای
+Description=Photo Frame 2D — layered photo frame studio
 Documentation=file://${PROJECT_DIR}/README.md
 After=network-online.target
 Wants=network-online.target
@@ -205,37 +205,37 @@ EOF
   systemctl daemon-reload
   systemctl enable --quiet "$SERVICE_NAME"
   systemctl restart "$SERVICE_NAME"
-  ok "سرویس ${SERVICE_NAME} نصب و راه‌اندازی شد (${WORKERS} worker)"
+  ok "service ${SERVICE_NAME} installed and started (${WORKERS} workers)"
 fi
 
 # --- 7. firewall -------------------------------------------------------------
 
-step "فایروال"
+step "Firewall"
 if have ufw; then
   ufw allow "${PORT}/tcp" comment "Photo Frame 2D" >/dev/null 2>&1 || true
   if ufw status 2>/dev/null | grep -q "Status: active"; then
-    ok "قانون ufw برای پورت ${PORT} فعال است"
+    ok "ufw rule for port ${PORT} is active"
   else
-    ok "قانون ufw برای پورت ${PORT} ثبت شد (ufw هم‌اکنون غیرفعال است)"
-    info "برای فعال‌سازی:  ufw allow OpenSSH && ufw enable"
+    ok "ufw rule for port ${PORT} added (ufw is currently disabled)"
+    info "to enable it:  ufw allow OpenSSH && ufw enable"
   fi
 else
-  info "ufw نصب نیست؛ از این مرحله صرف‌نظر شد."
+  info "ufw is not installed; skipping this step."
 fi
 
 # --- 8. health check ---------------------------------------------------------
 
-step "بررسی سلامت"
+step "Health check"
 HEALTH_URL="http://127.0.0.1:${PORT}/"
 if wait_for_http "$HEALTH_URL" 40; then
-  ok "برنامه پاسخ می‌دهد"
+  ok "the application responds"
 else
-  warn "برنامه در ۴۰ ثانیه پاسخ نداد."
+  warn "the application did not respond within 40 seconds."
   if has_systemd; then
-    warn "آخرین خطاها:"
+    warn "most recent errors:"
     journalctl -u "$SERVICE_NAME" -n 25 --no-pager || true
   fi
-  die "نصب کامل نشد."
+  die "installation did not complete."
 fi
 
 IP="$(primary_ip)"
@@ -248,19 +248,19 @@ print(User.objects.filter(is_superuser=True).count())
 
 cat <<EOF
 
-${C_GREEN}${C_BOLD}نصب با موفقیت انجام شد.${C_RESET}
+${C_GREEN}${C_BOLD}Installation completed successfully.${C_RESET}
 
-  آدرس برنامه   : http://${IP:-127.0.0.1}:${PORT}/
-  پنل مدیریت    : http://${IP:-127.0.0.1}:${PORT}/admin/
-  وضعیت سرویس   : systemctl status ${SERVICE_NAME}
-  لاگ زنده      : journalctl -u ${SERVICE_NAME} -f
+  Application    : http://${IP:-127.0.0.1}:${PORT}/
+  Admin panel    : http://${IP:-127.0.0.1}:${PORT}/admin/
+  Service status : systemctl status ${SERVICE_NAME}
+  Live logs      : journalctl -u ${SERVICE_NAME} -f
 EOF
 
 if [ "$ADMIN_COUNT" = "0" ]; then
   cat <<EOF
 
-  ${C_YELLOW}هنوز هیچ کاربر مدیری وجود ندارد.${C_RESET}
-  برای ساخت مدیر:  sudo ./scripts/create-admin.sh
+  ${C_YELLOW}No admin user exists yet.${C_RESET}
+  Create one with:  sudo ./scripts/create-admin.sh
 EOF
 fi
 echo

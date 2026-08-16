@@ -31,19 +31,19 @@ def generate_password(length: int = 16) -> str:
 
 
 class Command(BaseCommand):
-    help = "ساخت یا ارتقای یک کاربر به مدیر کل (super admin)"
+    help = "Create a super admin, or promote an existing user to one"
 
     def add_arguments(self, parser):
-        parser.add_argument("--phone", help="شماره موبایل، مثل 09121234567")
-        parser.add_argument("--email", help="ایمیل مدیر")
-        parser.add_argument("--name", default="", help="نام و نام خانوادگی")
-        parser.add_argument("--password", help="رمز عبور (ناامن در تاریخچهٔ شل)")
+        parser.add_argument("--phone", help="mobile number, e.g. 09121234567")
+        parser.add_argument("--email", help="the admin's email address")
+        parser.add_argument("--name", default="", help="first and last name")
+        parser.add_argument("--password", help="password (unsafe: stays in shell history)")
         parser.add_argument(
-            "--generate-password", action="store_true", help="یک رمز تصادفی بساز و نمایش بده"
+            "--generate-password", action="store_true", help="generate a random password and print it"
         )
         parser.add_argument(
             "--noinput", "--no-input", action="store_true", dest="noinput",
-            help="بدون پرسش تعاملی اجرا شود",
+            help="never ask anything interactively",
         )
 
     def prompt(self, label: str, default: str = "") -> str:
@@ -51,7 +51,7 @@ class Command(BaseCommand):
         try:
             value = input(f"{label}{suffix}: ").strip()
         except (EOFError, KeyboardInterrupt):
-            raise CommandError("لغو شد.")
+            raise CommandError("cancelled.")
         return value or default
 
     def handle(self, *args, **options):
@@ -60,9 +60,9 @@ class Command(BaseCommand):
         # --- phone ---
         phone_raw = options.get("phone")
         if not phone_raw and interactive:
-            phone_raw = self.prompt("شماره موبایل")
+            phone_raw = self.prompt("mobile number")
         if not phone_raw:
-            raise CommandError("شماره موبایل الزامی است (--phone).")
+            raise CommandError("a mobile number is required (--phone).")
 
         try:
             phone = normalize_phone(phone_raw)
@@ -74,19 +74,19 @@ class Command(BaseCommand):
         # --- email ---
         email = options.get("email") or (existing.email if existing else "")
         if not email and interactive:
-            email = self.prompt("ایمیل")
+            email = self.prompt("email")
         if not email:
-            raise CommandError("ایمیل الزامی است (--email).")
+            raise CommandError("an email address is required (--email).")
         email = email.strip().lower()
 
         clash = User.objects.filter(email__iexact=email).exclude(phone=phone).first()
         if clash:
-            raise CommandError(f"این ایمیل قبلاً برای شمارهٔ {clash.phone} ثبت شده است.")
+            raise CommandError(f"that email is already registered to {clash.phone}.")
 
         # --- name ---
         name = options.get("name") or (existing.full_name if existing else "")
         if not name and interactive:
-            name = self.prompt("نام و نام خانوادگی (اختیاری)")
+            name = self.prompt("full name (optional)")
 
         # --- password ---
         password = options.get("password")
@@ -97,12 +97,12 @@ class Command(BaseCommand):
             generated = True
         elif not password and interactive:
             while True:
-                password = getpass.getpass("رمز عبور: ")
+                password = getpass.getpass("password: ")
                 if not password:
-                    self.stderr.write("رمز عبور نمی‌تواند خالی باشد.")
+                    self.stderr.write("the password cannot be empty.")
                     continue
-                if password != getpass.getpass("تکرار رمز عبور: "):
-                    self.stderr.write("رمزها یکسان نیستند؛ دوباره تلاش کنید.")
+                if password != getpass.getpass("repeat password: "):
+                    self.stderr.write("the passwords do not match; try again.")
                     continue
                 break
         elif not password:
@@ -120,7 +120,7 @@ class Command(BaseCommand):
                 if generated:
                     pass  # random 16-char passwords are fine by construction
                 else:
-                    raise CommandError("رمز عبور ضعیف است: " + " ".join(exc.messages))
+                    raise CommandError("the password is too weak: " + " ".join(exc.messages))
 
         # --- create or promote ---
         if existing:
@@ -132,22 +132,22 @@ class Command(BaseCommand):
             if password:
                 existing.set_password(password)
             existing.save()
-            user, action = existing, "ارتقا یافت"
+            user, action = existing, "promoted"
         else:
             user = User.objects.create_superuser(
                 phone=phone, email=email, password=password, full_name=name
             )
-            action = "ساخته شد"
+            action = "created"
 
         self.stdout.write("")
-        self.stdout.write(self.style.SUCCESS(f"کاربر مدیر {action}."))
-        self.stdout.write(f"  شماره موبایل : {user.phone}")
-        self.stdout.write(f"  ایمیل        : {user.email}")
-        self.stdout.write(f"  نام          : {user.full_name or '—'}")
+        self.stdout.write(self.style.SUCCESS(f"Admin user {action}."))
+        self.stdout.write(f"  mobile   : {user.phone}")
+        self.stdout.write(f"  email    : {user.email}")
+        self.stdout.write(f"  name     : {user.full_name or '—'}")
         if generated:
             self.stdout.write("")
-            self.stdout.write(self.style.WARNING(f"  رمز عبور     : {password}"))
-            self.stdout.write("  این رمز فقط همین یک بار نمایش داده می‌شود؛ آن را ذخیره کنید.")
+            self.stdout.write(self.style.WARNING(f"  password : {password}"))
+            self.stdout.write("  This password is shown only once; save it now.")
         elif not password:
-            self.stdout.write("  رمز عبور     : بدون تغییر")
+            self.stdout.write("  password : unchanged")
         self.stdout.write("")

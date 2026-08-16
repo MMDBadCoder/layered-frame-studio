@@ -1,179 +1,180 @@
-# سند نیازمندی‌های محصول (PRD) — قاب عکس دوبعدی
+# Product Requirements Document (PRD) — Photo Frame 2D
 
-> نسخه ۱.۱ — آخرین به‌روزرسانی: ۲۶ مرداد ۱۴۰۵ (۱۶ اوت ۲۰۲۶)
-
----
-
-## ۱. خلاصهٔ محصول
-
-قاب عکس دوبعدی یک وب‌اپلیکیشن فارسی است که عکس کاربر را به تصویری با تعداد
-محدودی «لایهٔ رنگی» تبدیل می‌کند — همان چیزی که برای ساخت قاب‌های چندلایهٔ
-فیزیکی (چوب، اکریلیک، مقوا) لازم است. کاربر نتیجه را زنده می‌بیند، اندازهٔ قاب
-را انتخاب می‌کند، هزینهٔ تقریبی را می‌بیند و سفارش می‌دهد. مدیران سفارش‌ها را
-بررسی و قیمت نهایی را تعیین می‌کنند.
-
-### مسئله‌ای که حل می‌کند
-
-سفارش‌دهندهٔ قاب چندلایه نمی‌داند عکسش بعد از لایه‌بندی چه شکلی می‌شود و چقدر
-هزینه دارد. نتیجه: رفت‌وبرگشت زیاد بین مشتری و کارگاه. این محصول پیش‌نمایش
-دقیق و برآورد قیمت را به خود مشتری می‌دهد.
-
-### مخاطب
-
-- **کاربر عادی**: فارسی‌زبان، اغلب با موبایل، بدون دانش فنی.
-- **مدیر**: کارگاه‌دار یا اپراتور، بررسی‌کنندهٔ سفارش‌ها و تعیین‌کنندهٔ قیمت.
+> Version 1.1 — last updated 2026-08-16 (26 Mordad 1405)
 
 ---
 
-## ۲. اصول طراحی (تصمیم‌های بنیادین)
+## 1. Product summary
 
-این‌ها قواعدی هستند که همهٔ تصمیم‌های بعدی باید با آن‌ها سازگار بمانند:
+Photo Frame 2D is a Persian web application that converts a user's photograph
+into an image made of a limited number of "colour layers" — exactly what is
+needed to build a physical multi-layer frame out of wood, acrylic or cardboard.
+The user sees the result live, chooses a frame size, sees an approximate price
+and places an order. Admins review orders and set the final price.
 
-| # | اصل | دلیل |
+### The problem it solves
+
+Someone ordering a multi-layer frame has no idea what their photo will look
+like once it has been layered, or what it will cost. The result is a lot of
+back-and-forth between customer and workshop. This product hands the customer
+an accurate preview and a price estimate up front.
+
+### Audience
+
+- **End user**: Persian-speaking, usually on a phone, not technical.
+- **Admin**: the workshop owner or an operator, who reviews orders and sets prices.
+
+---
+
+## 2. Design principles (foundational decisions)
+
+These are the rules every later decision has to stay consistent with:
+
+| # | Principle | Rationale |
 |---|---|---|
-| ۱ | **ورود اجباری نیست** | کاربر باید بتواند قبل از هر تعهدی، محصول را امتحان کند. صفحهٔ اول هرگز نباید لاگین را تحمیل کند. |
-| ۲ | **کار کاربر هرگز گم نمی‌شود** | ورود به حساب در یک پنجرهٔ modal انجام می‌شود؛ صفحه بارگذاری مجدد نمی‌شود و تصویر ساخته‌شده حفظ می‌ماند. |
-| ۳ | **کل رابط فارسی و راست‌به‌چپ** | مخاطب فارسی‌زبان است. هیچ رشتهٔ انگلیسی‌ای نباید به کاربر نمایش داده شود؛ تاریخ‌ها شمسی و ارقام فارسی. |
-| ۴ | **سرور تنها منبع حقیقت** | تعداد لایه، ارتفاع قاب و قیمت همگی سمت سرور محاسبه می‌شوند. دستکاری مرورگر نباید قیمت یا خروجی را تغییر دهد. |
-| ۵ | **سادگی نگهداری** | SQLite تک‌فایلی، بدون سرویس جانبی. پشتیبان‌گیری باید یک فایل zip باشد. |
+| 1 | **Sign-in is never mandatory** | The user must be able to try the product before committing to anything. The landing page must never force a login. |
+| 2 | **The user's work is never lost** | Signing in happens in a modal; the page does not reload and the rendered image survives. |
+| 3 | **The whole UI is Persian and RTL** | The audience is Persian-speaking. No English string may ever be shown to a user; dates are Jalali and digits are Persian. |
+| 4 | **The server is the only source of truth** | Layer count, frame height and price are all computed server-side. Tampering with the browser must not change the price or the output. |
+| 5 | **Easy to maintain** | Single-file SQLite, no side services. A backup must be a single zip file. |
 
 ---
 
-## ۳. نقش‌ها و دسترسی‌ها
+## 3. Roles and permissions
 
-| نقش | تعریف فنی | توانایی‌ها |
+| Role | Technical definition | Capabilities |
 |---|---|---|
-| مهمان | احراز هویت نشده | بارگذاری عکس، پردازش، دانلود نتیجه، دیدن قیمت تقریبی |
-| کاربر عادی | `is_staff=False` | همهٔ موارد بالا + ثبت سفارش + مشاهدهٔ سفارش‌ها و هزینه‌ها |
-| مدیر | `is_staff=True` | دسترسی به پنل مدیریت |
-| مدیر کل | `is_superuser=True` | دسترسی کامل، از جمله ساخت و حذف مدیران |
+| Guest | Not authenticated | Upload a photo, process it, download the result, see the approximate price |
+| User | `is_staff=False` | All of the above + place orders + view their orders and costs |
+| Admin | `is_staff=True` | Access to the admin panel |
+| Superuser | `is_superuser=True` | Full access, including creating and deleting admins |
 
-هر کاربر با **شماره موبایل، ایمیل و رمز عبور** ثبت‌نام می‌کند. ورود با شماره
-موبایل یا ایمیل — هر دو پذیرفته می‌شود.
-
----
-
-## ۴. نیازمندی‌های کارکردی
-
-### ۴.۱ استودیو (صفحهٔ اصلی)
-
-| کد | نیازمندی |
-|---|---|
-| S1 | بارگذاری تصویر با کلیک یا کشیدن‌ورها‌کردن؛ حداکثر ۲۰ مگابایت |
-| S2 | انتخاب **دقیقاً یک** پروفایل رنگی از میان پروفایل‌های فعال |
-| S3 | تنظیم پارامترهای پیش‌پردازش و پس‌پردازش |
-| S4 | نمایش هم‌زمان تصویر اصلی و تصویر لایه‌ای |
-| S5 | دکمهٔ «اعمال تغییرات» تنها وقتی فعال است که تنظیمات با نتیجهٔ فعلی فرق کند |
-| S6 | دانلود تصویر ساخته‌شده |
-
-### ۴.۲ پروفایل رنگی
-
-| کد | نیازمندی |
-|---|---|
-| P1 | هر پروفایل: نام، توضیح، تعداد لایه (۲ تا ۱۶)، رنگ هر لایه |
-| P2 | **تعداد لایه‌ها فقط توسط مدیر تعیین می‌شود** — کاربر آن را انتخاب نمی‌کند |
-| P3 | لایهٔ ۰ تیره‌ترین ناحیه، آخرین لایه روشن‌ترین |
-| P4 | پروفایل غیرفعال به کاربر نمایش داده نمی‌شود |
-| P5 | تغییر یا حذف پروفایل نباید سفارش‌های قبلی را خراب کند (اطلاعات در سفارش snapshot می‌شود) |
-
-### ۴.۳ اندازه و قیمت
-
-| کد | نیازمندی |
-|---|---|
-| Z1 | مدیر حداقل و حداکثر **عرض** و **ارتفاع** قاب را تعیین می‌کند |
-| Z2 | نسبت عرض به ارتفاع قاب **همیشه** برابر نسبت تصویر اصلی است |
-| Z3 | کاربر عرض را انتخاب می‌کند؛ ارتفاع خودکار محاسبه می‌شود (و بالعکس) |
-| Z4 | هر دو بُعد باید داخل محدودهٔ مجاز باشند؛ محدودهٔ ارتفاع، محدودهٔ عرض را هم تنگ‌تر می‌کند |
-| Z5 | اگر نسبت تصویر با هیچ اندازهٔ مجازی سازگار نباشد، پیام روشن نمایش داده شود |
-| Z6 | هزینهٔ تقریبی = مساحت (cm²) × قیمت هر cm² (تعیین‌شده توسط مدیر) |
-| Z7 | مبلغ **همیشه** با برچسب «تقریبی» نمایش داده شود |
-| Z8 | مدیر پس از بررسی می‌تواند «هزینهٔ نهایی» را ثبت کند |
-| Z9 | کاربر هزینهٔ سفارش خود را در صفحهٔ «سفارش‌های من» می‌بیند |
-
-### ۴.۴ سفارش
-
-| کد | نیازمندی |
-|---|---|
-| O1 | ثبت سفارش نیازمند ورود است؛ ورود در modal انجام می‌شود |
-| O2 | پیش از ثبت، پنجرهٔ تأیید با پیش‌نمایش، اندازه، قیمت و هشدار نمایش داده شود |
-| O3 | هر کاربر حداکثر **۳ سفارش بررسی‌نشده** می‌تواند داشته باشد |
-| O4 | سفارش شامل: تصویر نهایی، تصویر اصلی، پروفایل، رنگ‌ها، تنظیمات، اندازه، قیمت |
-| O5 | وضعیت‌ها: در انتظار بررسی، در حال بررسی، تأیید شده، رد شده |
-| O6 | «بررسی‌نشده» یعنی وضعیت در انتظار یا در حال بررسی |
-| O7 | تصاویر سفارش خصوصی‌اند: فقط صاحب سفارش و مدیران |
-
-### ۴.۵ خروجی مدل سه‌بعدی
-
-| کد | نیازمندی |
-|---|---|
-| T1 | مدیر می‌تواند از هر سفارش فایل STL بسازد و دانلود کند |
-| T2 | هر رنگ یک پله: لایهٔ ۱ ارتفاع x، لایهٔ ۲ ارتفاع ۲x، لایهٔ ۳ ارتفاع ۳x و … |
-| T3 | مقدار x («ارتفاع هر لایه») در پنل مدیریت قابل تنظیم است |
-| T4 | جهت ارتفاع قابل وارونه کردن است (تیره‌ترین لایه بلندترین شود) |
-| T5 | ابعاد صفحه برابر اندازهٔ سفارش‌داده‌شدهٔ قاب است |
-| T6 | دقت مدل قابل تنظیم است (موازنهٔ جزئیات و حجم فایل) |
-| T7 | خروجی باید یک جسم بستهٔ manifold و قابل چاپ باشد |
-| T8 | دسترسی فقط برای مدیران |
-
-### ۴.۶ تنظیمات پیش‌فرض ساخت تصویر
-
-| کد | نیازمندی |
-|---|---|
-| D1 | مدیر همهٔ مقادیر پیش‌فرض استودیو را تعیین می‌کند |
-| D2 | کاربر هنگام باز کردن صفحهٔ اصلی همین مقادیر را می‌بیند |
-| D3 | کاربر می‌تواند هر مقدار را تغییر دهد؛ انتخاب او اولویت دارد |
-| D4 | مدیر پروفایل رنگی پیش‌فرض را هم تعیین می‌کند |
-| D5 | اگر پروفایل پیش‌فرض غیرفعال شود، اولین پروفایل فعال جایگزین می‌شود |
-
-### ۴.۷ پنل مدیریت
-
-| کد | نیازمندی |
-|---|---|
-| A1 | فهرست سفارش‌ها با تصویر بندانگشتی، کاربر، اندازه، هزینه و وضعیت |
-| A2 | تغییر وضعیت به‌صورت تکی و گروهی |
-| A3 | ثبت یادداشت مدیر و هزینهٔ نهایی |
-| A4 | ثبت خودکار بررسی‌کننده و زمان بررسی |
-| A5 | مدیریت پروفایل‌های رنگی با انتخابگر رنگ |
-| A6 | مدیریت محدودهٔ اندازه و قیمت هر cm² |
-| A7 | مدیریت کاربران و ارتقای آن‌ها به مدیر |
-| A8 | تنظیم پیش‌فرض‌های ساخت تصویر |
-| A9 | تنظیم پارامترهای خروجی سه‌بعدی و دانلود STL |
+Every user registers with a **mobile number, an email address and a password**.
+Sign-in accepts either the mobile number or the email.
 
 ---
 
-## ۵. نیازمندی‌های غیرکارکردی
+## 4. Functional requirements
 
-| حوزه | نیازمندی |
+### 4.1 Studio (landing page)
+
+| ID | Requirement |
 |---|---|
-| زبان | تمام رابط کاربری فارسی، `dir="rtl"`، تاریخ شمسی، ارقام فارسی |
-| کارایی | پردازش تصویر ۱۴۰۰×۱۷۰۰ زیر ۱۰ ثانیه |
-| موبایل | چیدمان واکنش‌گرا تا عرض ۳۲۰ پیکسل |
-| امنیت | CSRF روی همهٔ درخواست‌ها، محدودسازی تلاش ورود، تصاویر خصوصی |
-| نگهداری | نصب با یک دستور، پشتیبان‌گیری با یک دستور، بازیابی با یک دستور |
-| پایداری | سرویس systemd با `Restart=always` |
+| S1 | Upload an image by click or drag-and-drop; 20 MB maximum |
+| S2 | Select **exactly one** colour profile from the active profiles |
+| S3 | Adjust the pre-processing and post-processing parameters |
+| S4 | Show the original and the layered image side by side |
+| S5 | The "apply changes" button is enabled only when the settings differ from the current result |
+| S6 | Download the rendered image |
+
+### 4.2 Colour profiles
+
+| ID | Requirement |
+|---|---|
+| P1 | Each profile has a name, description, layer count (2 to 16) and a colour per layer |
+| P2 | **The layer count is set by admins only** — the user does not choose it |
+| P3 | Layer 0 is the darkest region, the last layer the lightest |
+| P4 | Inactive profiles are not shown to users |
+| P5 | Editing or deleting a profile must not corrupt existing orders (the data is snapshotted onto the order) |
+
+### 4.3 Size and price
+
+| ID | Requirement |
+|---|---|
+| Z1 | Admins set the minimum and maximum frame **width** and **height** |
+| Z2 | The frame's aspect ratio **always** equals the original image's aspect ratio |
+| Z3 | The user picks the width; the height is derived automatically (and vice versa) |
+| Z4 | Both dimensions must fall inside the allowed range; the height limits also narrow the width range |
+| Z5 | If the image ratio fits no allowed size at all, show a clear message |
+| Z6 | Approximate cost = area (cm²) × price per cm² (set by admins) |
+| Z7 | The amount is **always** labelled "approximate" |
+| Z8 | After review, an admin can record a "final cost" |
+| Z9 | The user sees their order's cost on the "My orders" page |
+
+### 4.4 Orders
+
+| ID | Requirement |
+|---|---|
+| O1 | Placing an order requires sign-in; sign-in happens in a modal |
+| O2 | Before submitting, show a confirmation dialog with the preview, size, price and a warning |
+| O3 | Each user may have at most **3 unreviewed orders** |
+| O4 | An order contains: final image, original image, profile, colours, settings, size, price |
+| O5 | Statuses: pending review, under review, approved, rejected |
+| O6 | "Unreviewed" means status pending or under review |
+| O7 | Order images are private: the order's owner and admins only |
+
+### 4.5 3D model export
+
+| ID | Requirement |
+|---|---|
+| T1 | An admin can generate and download an STL file from any order |
+| T2 | One terrace per colour: layer 1 at height x, layer 2 at 2x, layer 3 at 3x, and so on |
+| T3 | The value of x ("layer height") is editable in the admin panel |
+| T4 | The height direction can be inverted (darkest layer becomes the tallest) |
+| T5 | The plate's footprint equals the ordered frame size |
+| T6 | The model resolution is configurable (detail vs. file size) |
+| T7 | The output must be a closed, manifold, printable solid |
+| T8 | Admin-only access |
+
+### 4.6 Render defaults
+
+| ID | Requirement |
+|---|---|
+| D1 | Admins set every studio default value |
+| D2 | The user sees exactly those values when the landing page opens |
+| D3 | The user may change any of them; their choice wins |
+| D4 | Admins also set the default colour profile |
+| D5 | If the default profile is deactivated, the first active profile takes over |
+
+### 4.7 Admin panel
+
+| ID | Requirement |
+|---|---|
+| A1 | Order list with thumbnail, user, size, cost and status |
+| A2 | Status changes, individually and in bulk |
+| A3 | Record an admin note and the final cost |
+| A4 | Reviewer and review time recorded automatically |
+| A5 | Colour profile management with a colour picker |
+| A6 | Management of the size range and the price per cm² |
+| A7 | User management, including promotion to admin |
+| A8 | Configuration of the render defaults |
+| A9 | Configuration of the 3D export parameters, and STL download |
 
 ---
 
-## ۶. خارج از محدوده (فعلاً)
+## 5. Non-functional requirements
 
-- پرداخت آنلاین — قیمت فقط اعلام می‌شود
-- ارسال پیامک/ایمیل اطلاع‌رسانی
-- چند زبانه بودن
-- بازیابی رمز عبور خودکار (فعلاً از طریق مدیر)
-- دانلود گروهی STL چند سفارش
+| Area | Requirement |
+|---|---|
+| Language | The entire UI in Persian, `dir="rtl"`, Jalali dates, Persian digits |
+| Performance | A 1400×1700 image processed in under 10 seconds |
+| Mobile | Responsive layout down to 320 px wide |
+| Security | CSRF on every request, sign-in rate limiting, private images |
+| Maintenance | One-command install, one-command backup, one-command restore |
+| Reliability | systemd service with `Restart=always` |
 
 ---
 
-## ۷. معیارهای پذیرش
+## 6. Out of scope (for now)
 
-سیستم زمانی کامل است که:
+- Online payment — the price is only quoted
+- SMS/email notifications
+- Multi-language support
+- Automatic password recovery (currently handled by an admin)
+- Bulk STL download across several orders
 
-1. مهمان بتواند بدون ورود، تصویر بسازد و دانلود کند. ✅
-2. کاربر پس از ورود در modal، همان تصویر را بدون بارگذاری مجدد سفارش دهد. ✅
-3. سفارش چهارم بررسی‌نشده رد شود. ✅
-4. ارتفاع قاب دقیقاً از نسبت تصویر محاسبه شود و دستکاری مرورگر بی‌اثر باشد. ✅
-5. مدیر بتواند وضعیت و قیمت نهایی را تغییر دهد. ✅
-6. `install.sh` روی سرور تازه، برنامه را بالا بیاورد. ✅
-7. `backup.sh` + `restore.sh` وضعیت را کامل منتقل کنند. ✅
-8. تغییر پیش‌فرض‌ها در پنل مدیریت، بلافاصله در صفحهٔ اصلی دیده شود. ✅
-9. فایل STL ساخته‌شده یک جسم بستهٔ قابل چاپ باشد. ✅
+---
+
+## 7. Acceptance criteria
+
+The system is complete when:
+
+1. A guest can render and download an image without signing in. ✅
+2. A user who signs in via the modal can order that same image with no page reload. ✅
+3. A fourth unreviewed order is rejected. ✅
+4. The frame height is derived from the image ratio and browser tampering has no effect. ✅
+5. An admin can change the status and the final price. ✅
+6. `install.sh` brings the app up on a fresh server. ✅
+7. `backup.sh` + `restore.sh` move the state across intact. ✅
+8. Changing the defaults in the admin panel is visible on the landing page immediately. ✅
+9. The generated STL file is a closed, printable solid. ✅

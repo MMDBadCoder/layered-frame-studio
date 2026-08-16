@@ -19,15 +19,15 @@ ASSUME_YES=0
 
 usage() {
   cat <<'USAGE'
-استفاده: sudo ./scripts/uninstall.sh [گزینه‌ها]
+Usage: sudo ./scripts/uninstall.sh [options]
 
-  --purge-venv     پوشهٔ .venv هم حذف شود
-  --purge-data     پایگاه داده، تصاویر و .env هم حذف شوند (خطرناک)
-  --remove-ufw     قانون ufw مربوط به پورت برنامه حذف شود
-  --yes            بدون پرسش تأیید ادامه بده
-  -h, --help       همین راهنما
+  --purge-venv     also delete the .venv directory
+  --purge-data     also delete the database, the images and .env (dangerous)
+  --remove-ufw     also remove the ufw rule for the app's port
+  --yes            proceed without asking for confirmation
+  -h, --help       this help
 
-داده‌ها به‌صورت پیش‌فرض حفظ می‌شوند.
+Data is kept by default.
 USAGE
 }
 
@@ -38,71 +38,71 @@ while [ $# -gt 0 ]; do
     --remove-ufw) REMOVE_UFW=1; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
     -h|--help) usage; exit 0 ;;
-    *) die "گزینهٔ ناشناخته: $1  (--help را ببینید)" ;;
+    *) die "unknown option: $1  (see --help)" ;;
   esac
 done
 
 require_root "$@"
 
-step "توقف سرویس"
+step "Stopping the service"
 if has_systemd && service_installed; then
   systemctl stop "$SERVICE_NAME" 2>/dev/null || true
   systemctl disable --quiet "$SERVICE_NAME" 2>/dev/null || true
   rm -f "$SERVICE_FILE"
   systemctl daemon-reload
   systemctl reset-failed "$SERVICE_NAME" 2>/dev/null || true
-  ok "سرویس ${SERVICE_NAME} متوقف و حذف شد"
+  ok "service ${SERVICE_NAME} stopped and removed"
 else
-  info "سرویسی برای حذف پیدا نشد"
+  info "no service found to remove"
 fi
 
 if [ "$REMOVE_UFW" -eq 1 ] && have ufw; then
-  step "فایروال"
+  step "Firewall"
   PORT="$(app_port)"
   ufw delete allow "${PORT}/tcp" >/dev/null 2>&1 || true
-  ok "قانون ufw پورت ${PORT} حذف شد"
+  ok "ufw rule for port ${PORT} removed"
 fi
 
 if [ "$PURGE_VENV" -eq 1 ]; then
-  step "حذف محیط مجازی"
+  step "Removing the virtualenv"
   rm -rf "$VENV_DIR"
-  ok "پوشهٔ .venv حذف شد"
+  ok ".venv removed"
 fi
 
 if [ "$PURGE_DATA" -eq 1 ]; then
-  step "حذف کامل داده‌ها"
-  warn "این کار پایگاه داده، تصاویر سفارش‌ها و کلید امنیتی را برای همیشه حذف می‌کند."
-  info "مسیرها: $STATE_DB، $STATE_MEDIA، $STATE_UPLOADS، $ENV_FILE"
+  step "Purging all data"
+  warn "this permanently deletes the database, the order images and the secret key."
+  info "paths: $STATE_DB, $STATE_MEDIA, $STATE_UPLOADS, $ENV_FILE"
 
   if [ "$ASSUME_YES" -ne 1 ]; then
-    printf '    برای تأیید، عبارت %sDELETE%s را تایپ کنید: ' "$C_BOLD" "$C_RESET"
+    printf '    to confirm, type %sDELETE%s: ' "$C_BOLD" "$C_RESET"
     read -r CONFIRM
-    [ "$CONFIRM" = "DELETE" ] || die "لغو شد؛ هیچ داده‌ای حذف نشد."
+    [ "$CONFIRM" = "DELETE" ] || die "cancelled; no data was deleted."
   fi
 
-  info "ابتدا یک نسخهٔ پشتیبان گرفته می‌شود…"
+  info "taking a backup first…"
   if "${PROJECT_DIR}/scripts/backup.sh" --quiet; then
-    ok "پشتیبان‌گیری انجام شد (قبل از حذف)"
+    ok "backup taken (before deletion)"
   else
-    warn "پشتیبان‌گیری ناموفق بود؛ ادامه داده می‌شود."
+    warn "the backup failed; continuing anyway."
   fi
 
   rm -f "$STATE_DB" "$ENV_FILE"
   rm -rf "$STATE_MEDIA" "$STATE_UPLOADS" "${PROJECT_DIR}/staticfiles"
-  ok "همهٔ داده‌ها حذف شدند"
+  ok "all data deleted"
 fi
 
 cat <<EOF
 
-${C_GREEN}${C_BOLD}حذف سرویس انجام شد.${C_RESET}
+${C_GREEN}${C_BOLD}Service removed.${C_RESET}
 EOF
 
 if [ "$PURGE_DATA" -eq 0 ]; then
   cat <<EOF
-  داده‌های شما دست‌نخورده باقی ماند:
-    پایگاه داده : $STATE_DB
-    تصاویر      : $STATE_MEDIA
-  برای نصب دوباره:  sudo ./scripts/install.sh
+  Your data was left untouched:
+    database : $STATE_DB
+    images   : $STATE_MEDIA
+  To install again:  sudo ./scripts/install.sh
 EOF
 fi
 echo

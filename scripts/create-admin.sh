@@ -14,21 +14,21 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 
 if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
   cat <<'USAGE'
-استفاده: ./scripts/create-admin.sh [گزینه‌ها]
+Usage: ./scripts/create-admin.sh [options]
 
-  --phone <09…>          شماره موبایل مدیر
-  --email <a@b.com>      ایمیل
-  --name  "نام"          نام و نام خانوادگی
-  --generate-password    رمز تصادفی بساز و نمایش بده
-  --password <pass>      رمز مشخص (در تاریخچهٔ شل باقی می‌ماند)
-  --noinput              بدون پرسش تعاملی
+  --phone <09…>          the admin's mobile number
+  --email <a@b.com>      email address
+  --name  "Full Name"    first and last name
+  --generate-password    generate a random password and print it
+  --password <pass>      use this password (it stays in your shell history)
+  --noinput              never ask anything interactively
 
-بدون گزینه، اطلاعات به‌صورت تعاملی پرسیده می‌شود.
+With no options, the details are asked interactively.
 USAGE
   exit 0
 fi
 
-[ -x "$PYTHON_BIN" ] || die "محیط مجازی پیدا نشد. ابتدا اجرا کنید:  sudo ./scripts/install.sh"
+[ -x "$PYTHON_BIN" ] || die "virtualenv not found. Run this first:  sudo ./scripts/install.sh"
 
 cd "$PROJECT_DIR"
 exec "$PYTHON_BIN" manage.py create_admin "$@"

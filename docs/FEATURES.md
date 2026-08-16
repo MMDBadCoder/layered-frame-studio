@@ -1,251 +1,258 @@
-# فهرست قابلیت‌ها — قاب عکس دوبعدی
+# Feature reference — Photo Frame 2D
 
-توضیح دقیق رفتار هر قابلیت، برای مرجع آینده. هر قابلیت با آزمون خودکار در
-`posterizer/tests.py` پوشش داده شده است (۵۶ آزمون).
+The exact behaviour of every feature, for future reference. Each one is covered
+by an automated test in `posterizer/tests.py` (56 tests).
+
+Persian strings quoted below are the literal UI text, so you can find them in
+the templates and the tests.
 
 ---
 
-## ۱. استودیوی ساخت تصویر
+## 1. The render studio
 
-### ۱.۱ بارگذاری تصویر
-- کلیک روی ناحیهٔ بارگذاری یا کشیدن و رها کردن فایل
-- فرمت‌های JPG، PNG، WebP
-- حداکثر ۲۰ مگابایت → پیام: «حجم تصویر بیش از حد مجاز است (حداکثر ۲۰ مگابایت).»
-- فایل غیرتصویری → «فایل انتخاب‌شده یک تصویر معتبر نیست.»
-- تصویر اصلی روی دیسک نگه داشته می‌شود تا تغییر تنظیمات نیازی به بارگذاری مجدد نداشته باشد
+### 1.1 Image upload
+- Click the upload area or drag and drop a file
+- JPG, PNG and WebP formats
+- 20 MB maximum → message: "حجم تصویر بیش از حد مجاز است (حداکثر ۲۰ مگابایت)."
+- Non-image file → "فایل انتخاب‌شده یک تصویر معتبر نیست."
+- The original image is kept on disk, so changing settings does not require a re-upload
 
-### ۱.۲ پروفایل رنگی
-- کاربر **دقیقاً یکی** از پروفایل‌های فعال را انتخاب می‌کند
-- پیش‌نمایش پالت به‌صورت نوار رنگی زیر انتخابگر
-- تعداد لایه‌ها از پروفایل می‌آید — کاربر آن را تغییر نمی‌دهد
-- ارسال `num_levels` دستکاری‌شده از مرورگر **نادیده گرفته می‌شود**
+### 1.2 Colour profile
+- The user picks **exactly one** of the active profiles
+- The palette is previewed as a colour strip below the picker
+- The layer count comes from the profile — the user cannot change it
+- A tampered `num_levels` sent from the browser is **ignored**
 
-### ۱.۳ پارامترهای پردازش
-| بخش | گزینه‌ها |
+### 1.3 Processing parameters
+| Section | Options |
 |---|---|
-| پیش‌پردازش | بدون، محو گاوسی، فیلتر میانه، دوطرفه (حفظ لبه‌ها) |
-| پس‌پردازش | بدون، فیلتر میانه، مورفولوژی، مؤلفه‌های همبند، فیلتر اکثریت |
-| پیشرفته | سوپرپیکسل (نیازمند OpenCV کامل؛ در نبودش غیرفعال با توضیح) |
+| Pre-processing | None, gaussian blur, median filter, bilateral (edge preserving) |
+| Post-processing | None, median filter, morphology, connected components, majority filter |
+| Advanced | Superpixels (needs full OpenCV; disabled with an explanation when missing) |
 
-فیلدهای هر روش فقط وقتی نمایش داده می‌شوند که آن روش انتخاب شده باشد.
+A method's fields are shown only while that method is selected.
 
-### ۱.۴ دکمهٔ «اعمال تغییرات»
-- تنها زمانی فعال است که تنظیمات فعلی با تنظیماتی که تصویر فعلی را ساخته فرق کند
-- پیام راهنما سه حالت دارد: در حال پردازش / تنظیمات تغییر کرده / تنظیمات هماهنگ است
-- سفارش همیشه با تنظیماتِ **تصویر نمایش‌داده‌شده** ثبت می‌شود، نه فرم لحظه‌ای
+### 1.4 The "apply changes" button
+- Enabled only when the current settings differ from the ones that produced the current image
+- The helper text has three states: processing / settings changed / settings in sync
+- An order always records the settings of the **displayed image**, not the live form
 
-### ۱.۵ دانلود
-تصویر لایه‌ای به‌صورت PNG با نام `photo-frame-2d.png`.
+### 1.5 Download
+The layered image as a PNG named `photo-frame-2d.png`.
 
 ---
 
-## ۲. اندازه و قیمت قاب
+## 2. Frame size and price
 
-### ۲.۱ قاعدهٔ نسبت
-نسبت عرض به ارتفاع قاب **همیشه** برابر نسبت تصویر اصلی است.
-
-```
-ارتفاع = عرض ÷ (عرض تصویر ÷ ارتفاع تصویر)
-```
-
-### ۲.۲ محدودهٔ مؤثر
-محدودیت ارتفاع، محدودهٔ عرض را هم تنگ‌تر می‌کند:
+### 2.1 The ratio rule
+The frame's aspect ratio **always** equals the original image's aspect ratio.
 
 ```
-حداقل عرض مؤثر = max(حداقل عرض، حداقل ارتفاع × نسبت)
-حداکثر عرض مؤثر = min(حداکثر عرض، حداکثر ارتفاع × نسبت)
+height = width ÷ (image width ÷ image height)
 ```
 
-مثال با محدودهٔ ۱۰ تا ۱۰۰ سانتی‌متر:
+### 2.2 Effective range
+The height limits also narrow the width range:
 
-| تصویر | نسبت | عرض مجاز |
+```
+effective min width = max(min width, min height × ratio)
+effective max width = min(max width, max height × ratio)
+```
+
+Example with a 10–100 cm range:
+
+| Image | Ratio | Allowed width |
 |---|---|---|
-| ۱۴۱۳×۱۷۶۶ (عمودی) | ۰٫۸۰ | ۱۰ تا ۸۰ |
-| ۱۷۶۶×۱۴۱۳ (افقی) | ۱٫۲۵ | ۱۲٫۵ تا ۱۰۰ |
-| ۸۰۰×۸۰۰ (مربع) | ۱٫۰۰ | ۱۰ تا ۱۰۰ |
-| ۴۰۰۰×۵۰۰ (پانوراما) | ۸٫۰۰ | ۸۰ تا ۱۰۰ |
+| 1413×1766 (portrait) | 0.80 | 10 to 80 |
+| 1766×1413 (landscape) | 1.25 | 12.5 to 100 |
+| 800×800 (square) | 1.00 | 10 to 100 |
+| 4000×500 (panorama) | 8.00 | 80 to 100 |
 
-اگر حداقل مؤثر از حداکثر مؤثر بیشتر شود، هیچ اندازه‌ای ممکن نیست و پیام
-مناسب نمایش داده می‌شود.
+If the effective minimum exceeds the effective maximum, no size is possible and
+an appropriate message is shown.
 
-### ۲.۳ رابط کاربری
-- یک اسلایدر و دو جعبهٔ عددی (عرض و ارتفاع) که یکدیگر را به‌روز می‌کنند
-- ارقام فارسی در ورودی پذیرفته می‌شود (`۶۰` = `60`)
-- محدوده روی blur اصلاح می‌شود تا تایپ کردن مختل نشود
-- خارج از محدوده → پیام خطا و غیرفعال شدن دکمهٔ ثبت سفارش
+### 2.3 User interface
+- One slider and two number boxes (width and height) that update each other
+- Persian digits are accepted in the inputs (`۶۰` = `60`)
+- The range is clamped on blur, so typing is not disrupted
+- Out of range → an error message, and the order button is disabled
 
-### ۲.۴ قیمت
+### 2.4 Price
 ```
-هزینهٔ تقریبی = مساحت (سانتی‌متر مربع) × قیمت هر سانتی‌متر مربع
+approximate cost = area (cm²) × price per cm²
 ```
-- گرد شده به نزدیک‌ترین مضرب «گرد کردن مبلغ» (پیش‌فرض ۱۰۰۰ تومان)
-- **همیشه** با برچسب «تقریبی» نمایش داده می‌شود
-- به‌صورت زنده در نوار کناری و دوباره در پنجرهٔ تأیید
-- قیمت لحظهٔ ثبت در سفارش snapshot می‌شود؛ تغییر بعدی قیمت‌ها سفارش‌های قدیمی را تغییر نمی‌دهد
+- Rounded to the nearest multiple of the "cost rounding" setting (default 1000 Toman)
+- **Always** labelled "تقریبی" ("approximate")
+- Shown live in the sidebar and again in the confirmation dialog
+- The price at submission time is snapshotted onto the order; later price changes do not affect existing orders
 
-**ارتفاع و قیمت هر دو سمت سرور از نو محاسبه می‌شوند.** ارسال ارتفاع یا مبلغ
-دلخواه از مرورگر بی‌اثر است.
+**Both height and price are recomputed on the server.** Sending an arbitrary
+height or amount from the browser has no effect.
 
 ---
 
-## ۳. حساب کاربری
+## 3. User accounts
 
-### ۳.۱ ثبت‌نام
-- نام (اختیاری)، شماره موبایل، ایمیل، رمز عبور، تکرار رمز
-- شماره موبایل: `09xxxxxxxxx`؛ اشکال `+98`، `0098`، `98`، `9xx…` هم پذیرفته و نرمال می‌شوند
-- ارقام فارسی و عربی به لاتین تبدیل می‌شوند
-- ایمیل و شماره یکتا هستند
-- اعتبارسنجی رمز جنگو فعال است (حداقل ۸ کاراکتر، نه صرفاً عددی، نه رمز رایج، نه شبیه ایمیل)
+### 3.1 Registration
+- Name (optional), mobile number, email, password, password confirmation
+- Mobile number: `09xxxxxxxxx`; the `+98`, `0098`, `98` and `9xx…` forms are also accepted and normalised
+- Persian and Arabic digits are converted to Latin
+- Email and mobile number are unique
+- Django's password validation is enabled (at least 8 characters, not purely numeric, not a common password, not similar to the email)
 
-### ۳.۲ ورود
-- با شماره موبایل **یا** ایمیل
-- پس از ۱۰ تلاش ناموفق از یک IP، ۵ دقیقه محدودیت
+### 3.2 Sign-in
+- With **either** the mobile number or the email
+- After 10 failed attempts from one IP, a 5-minute lockout
 
-### ۳.۳ ورود بدون از دست رفتن کار
-این مهم‌ترین قاعدهٔ رابط کاربری است:
-- ورود و ثبت‌نام در یک modal روی همان صفحه انجام می‌شود
-- صفحه هرگز بارگذاری مجدد نمی‌شود
-- شناسهٔ تصویر در نشست به‌صراحت حفظ می‌شود (جنگو هنگام ورود کلید نشست را می‌چرخاند)
-- توکن CSRF جدید پس از ورود به مرورگر برگردانده می‌شود
-- انصراف از modal، تصویر را دست‌نخورده باقی می‌گذارد
-
----
-
-## ۴. سفارش
-
-### ۴.۱ ثبت
-۱. کاربر «ثبت سفارش» را می‌زند
-۲. اگر وارد نشده باشد → modal ورود (تصویر حفظ می‌شود)
-۳. پنجرهٔ تأیید: پیش‌نمایش، پروفایل، تعداد لایه، اندازه، هزینهٔ تقریبی، سهمیه، هشدار، یادداشت اختیاری
-۴. تأیید → ثبت
-
-### ۴.۲ سهمیهٔ ۳ سفارش
-- حداکثر ۳ سفارش با وضعیت «در انتظار بررسی» یا «در حال بررسی»
-- بررسی در تراکنش انجام می‌شود تا دو کلیک سریع از سهمیه عبور نکند
-- پس از بررسی هر سفارش، یک جای خالی آزاد می‌شود
-
-### ۴.۳ محتوای ذخیره‌شده
-تصویر نهایی، تصویر اصلی، نام پروفایل، تعداد لایه، رنگ‌ها، تنظیمات پردازش،
-عرض، ارتفاع، مساحت، قیمت هر cm²، هزینهٔ برآوردی، یادداشت کاربر.
-
-همه به‌صورت snapshot: تغییر یا حذف پروفایل، سفارش‌های ثبت‌شده را تغییر نمی‌دهد.
-
-### ۴.۴ صفحهٔ «سفارش‌های من»
-تصویر، شماره، پروفایل، تعداد لایه، اندازه، تاریخ شمسی، وضعیت رنگی، هزینه
-(تقریبی یا نهایی)، یادداشت مدیر، دکمهٔ دانلود.
-
-### ۴.۵ حریم خصوصی تصاویر
-تصاویر از مسیر `/orders/<id>/image/<kind>/` و تنها برای صاحب سفارش و مدیران
-سرو می‌شوند. پوشهٔ `media/` مستقیماً در دسترس نیست.
+### 3.3 Signing in without losing work
+This is the single most important UI rule:
+- Sign-in and registration happen in a modal on the same page
+- The page never reloads
+- The image id is carried over explicitly in the session (Django rotates the session key on login)
+- A fresh CSRF token is returned to the browser after sign-in
+- Dismissing the modal leaves the image untouched
 
 ---
 
-## ۴٫۵ خروجی مدل سه‌بعدی (STL)
+## 4. Orders
 
-مدیر می‌تواند از هر سفارش یک فایل STL برای چاپ سه‌بعدی یا برش لیزری بسازد.
+### 4.1 Submission
+1. The user clicks "ثبت سفارش" ("place order")
+2. If not signed in → the sign-in modal (the image is preserved)
+3. Confirmation dialog: preview, profile, layer count, size, approximate cost, quota, warning, optional note
+4. Confirm → submitted
 
-### قاعدهٔ ارتفاع
-هر رنگ پالت یک پله با ارتفاع مخصوص خودش می‌شود:
+### 4.2 The 3-order quota
+- At most 3 orders with status "pending review" or "under review"
+- The check runs inside a transaction, so two fast clicks cannot slip past the quota
+- Reviewing an order frees a slot
+
+### 4.3 Stored contents
+Final image, original image, profile name, layer count, colours, processing
+settings, width, height, area, price per cm², estimated cost, user note.
+
+All snapshotted: editing or deleting a profile does not change existing orders.
+
+### 4.4 The "My orders" page
+Image, order number, profile, layer count, size, Jalali date, colour-coded
+status, cost (approximate or final), admin note, download button.
+
+### 4.5 Image privacy
+Images are served from `/orders/<id>/image/<kind>/` and only to the order's
+owner and to admins. The `media/` directory is not directly reachable.
+
+---
+
+## 4.5 3D model export (STL)
+
+An admin can generate an STL file from any order, for 3D printing or laser
+cutting.
+
+### The height rule
+Every palette colour becomes a terrace with its own height:
 
 ```
-لایهٔ ۱ → x میلی‌متر
-لایهٔ ۲ → ۲x میلی‌متر
-لایهٔ ۳ → ۳x میلی‌متر
+layer 1 → x mm
+layer 2 → 2x mm
+layer 3 → 3x mm
 …
 ```
 
-`x` همان «ارتفاع هر لایه» در تنظیمات فروشگاه است (پیش‌فرض ۲ میلی‌متر).
+`x` is the "layer height" setting in the site settings (default 2 mm).
 
-با پیش‌فرض‌ها، لایهٔ ۱ **تیره‌ترین** رنگ است، یعنی نواحی تیره کوتاه‌ترین و نواحی
-روشن بلندترین می‌شوند. اگر عکس این را می‌خواهید، گزینهٔ **«وارونه کردن ارتفاع
-لایه‌ها»** را روشن کنید تا تیره‌ترین لایه بلندترین شود.
+With the defaults, layer 1 is the **darkest** colour, so dark areas end up
+shortest and light areas tallest. If you want the opposite, enable
+**"وارونه کردن ارتفاع لایه‌ها"** ("invert layer heights") so the darkest layer
+becomes the tallest.
 
-### ابعاد
-- طول و عرض صفحه دقیقاً برابر اندازهٔ سفارش‌داده‌شدهٔ قاب است (سانتی‌متر → میلی‌متر)
-- سفارش‌های قدیمی که اندازه ندارند، از اندازهٔ پیش‌فرض داخل محدودهٔ مجاز استفاده می‌کنند
-- ارتفاع کل = تعداد لایه × ارتفاع هر لایه
+### Dimensions
+- The plate's width and length match the ordered frame size exactly (cm → mm)
+- Older orders without a size fall back to a default size inside the allowed range
+- Total height = layer count × layer height
 
-### کیفیت خروجی
-- **دقت**: بزرگ‌ترین ضلع به `stl_max_resolution` سلول تقسیم می‌شود (پیش‌فرض ۴۰۰).
-  عدد بزرگ‌تر یعنی جزئیات بیشتر و فایل سنگین‌تر. برای یک قاب ۳۰ سانتی‌متری،
-  ۴۰۰ سلول یعنی هر سلول حدود ۰٫۷۵ میلی‌متر — هم‌اندازهٔ نازل چاپگرهای رایج.
-- **قالب**: STL دودویی (binary)
-- **watertight**: خروجی یک جسم بستهٔ manifold است. دو تضمین این را ممکن می‌کنند:
-  1. هر دیوار روی همهٔ ارتفاع‌های استاندارد تقسیم می‌شود تا در گوشه‌ها
-     T-junction ایجاد نشود.
-  2. نقاط «زینی» — جایی که دو ستون فقط از یک خط به هم می‌رسند و چاپ‌شدنی
-     نیستند — قبل از ساخت مدل پر می‌شوند. روی تصاویر پوستری واقعی این اصلاح
-     کمتر از چند درصد سلول‌ها را تغییر می‌دهد.
-- **جهت نرمال‌ها** رو به بیرون است (حجم محاسبه‌شده مثبت است).
+### Output quality
+- **Resolution**: the longest side is divided into `stl_max_resolution` cells
+  (default 400). A larger number means more detail and a heavier file. For a
+  30 cm frame, 400 cells means roughly 0.75 mm per cell — about the nozzle size
+  of a typical printer.
+- **Format**: binary STL
+- **Watertight**: the output is a closed manifold solid. Two guarantees make
+  that possible:
+  1. Every wall is split at all standard heights, so no T-junctions appear at
+     corners.
+  2. "Saddle" points — where two columns meet along a single line and cannot be
+     printed — are filled before the model is built. On real posterised images
+     this correction touches less than a few percent of the cells.
+- **Normals** face outward (the computed volume is positive).
 
-### دسترسی
-فقط مدیران. کاربر عادی یا مهمان با ۴۰۴ روبه‌رو می‌شود.
+### Access
+Admins only. Regular users and guests get a 404.
 
-مسیر: `/orders/<id>/stl/` — دکمهٔ دانلود در فهرست سفارش‌ها و صفحهٔ هر سفارش.
-
----
-
-## ۵. پنل مدیریت
-
-پنل مدیریت جنگو، فارسی و راست‌به‌چپ.
-
-### ۵.۱ سفارش‌ها
-- فهرست: شماره، تصویر، کاربر، پروفایل، لایه‌ها، اندازه، هزینه، وضعیت، تاریخ شمسی
-- تغییر وضعیت مستقیم در فهرست
-- عملیات گروهی: در حال بررسی / تأیید / رد
-- صفحهٔ سفارش: هر دو تصویر با لینک دانلود، جدول تنظیمات، پالت، محاسبهٔ هزینه
-- ثبت «هزینهٔ نهایی» و «یادداشت مدیر»
-- ثبت خودکار بررسی‌کننده و زمان
-- ساخت دستی سفارش غیرفعال است
-
-### ۵.۲ پروفایل‌های رنگی
-- افزودن/ویرایش/غیرفعال‌سازی
-- تعیین تعداد لایه؛ پس از ذخیره ردیف‌های رنگ خودکار ساخته/حذف/مرتب می‌شوند
-- انتخابگر رنگ واقعی برای هر لایه
-- ترتیب نمایش
-
-### ۵.۳ تنظیمات فروشگاه
-یک صفحه با چهار بخش:
-
-**محدودهٔ اندازهٔ قاب** — حداقل/حداکثر عرض و ارتفاع
-
-**قیمت‌گذاری** — قیمت هر سانتی‌متر مربع، گرد کردن مبلغ، و جدول نمونهٔ قیمت که
-با تنظیمات فعلی به‌روز می‌شود
-
-**تنظیمات پیش‌فرض ساخت تصویر** — همان چیزی که کاربر هنگام باز کردن صفحهٔ اصلی
-می‌بیند:
-- پروفایل رنگی پیش‌فرض
-- روش هموارسازی و پارامترهایش (کرنل گاوسی، کرنل میانه، قطر و سیگماهای دوطرفه)
-- روش پاک‌سازی و پارامترهایش (کرنل مورفولوژی، حداقل اندازه ناحیه، پنجرهٔ اکثریت)
-- حفظ لبه‌ها، سوپرپیکسل و اندازهٔ ناحیهٔ آن
-
-این‌ها فقط **نقطهٔ شروع** هستند؛ کاربر می‌تواند هرکدام را تغییر دهد. اگر
-پروفایل پیش‌فرض غیرفعال شود، سیستم به اولین پروفایل فعال برمی‌گردد.
-
-**خروجی سه‌بعدی (STL)** — ارتفاع هر لایه، وارونه کردن جهت، حداکثر دقت، و
-پیش‌نمایش ارتفاع لایه‌ها با تنظیمات فعلی
-
-### ۵.۴ کاربران
-فهرست با نقش، تعداد سفارش‌ها و تعداد بررسی‌نشده؛ ارتقا به مدیر.
+Path: `/orders/<id>/stl/` — the download button appears on the order list and
+on each order's page.
 
 ---
 
-## ۶. ابزارهای نگهداری
+## 5. Admin panel
 
-| اسکریپت | ویژگی کلیدی |
+The Django admin panel, in Persian and RTL.
+
+### 5.1 Orders
+- List: number, image, user, profile, layers, size, cost, status, Jalali date
+- Status can be changed inline in the list
+- Bulk actions: under review / approve / reject
+- Order page: both images with download links, settings table, palette, cost breakdown
+- Recording the "final cost" and the "admin note"
+- Reviewer and time recorded automatically
+- Creating an order by hand is disabled
+
+### 5.2 Colour profiles
+- Add / edit / deactivate
+- Set the layer count; colour rows are created, removed and reordered automatically on save
+- A real colour picker per layer
+- Display ordering
+
+### 5.3 Site settings
+One page with four sections:
+
+**Frame size range** — minimum/maximum width and height
+
+**Pricing** — price per square centimetre, cost rounding, and a sample price
+table that updates with the current settings
+
+**Render defaults** — exactly what the user sees when the landing page opens:
+- Default colour profile
+- Smoothing method and its parameters (gaussian kernel, median kernel, bilateral diameter and sigmas)
+- Cleanup method and its parameters (morphology kernel, minimum region size, majority window)
+- Edge preservation, superpixels and superpixel region size
+
+These are only a **starting point**; the user can change any of them. If the
+default profile is deactivated, the system falls back to the first active one.
+
+**3D export (STL)** — layer height, direction inversion, maximum resolution,
+and a preview of the layer heights under the current settings
+
+### 5.4 Users
+List with role, order count and unreviewed count; promotion to admin.
+
+---
+
+## 6. Maintenance tooling
+
+| Script | Key property |
 |---|---|
-| `install.sh` | idempotent، از هر مسیری، systemd، بررسی سلامت |
-| `uninstall.sh` | حذف سرویس؛ داده‌ها پیش‌فرض حفظ می‌شوند |
-| `create-admin.sh` | تعاملی یا با پارامتر؛ ارتقای کاربر موجود بدون آسیب به سفارش‌ها |
-| `backup.sh` | zip شامل db + media + uploads + .env با manifest و checksum |
-| `restore.sh` | اعتبارسنجی، نسخهٔ ایمنی خودکار، توقف/شروع سرویس، مهاجرت |
-| `manage.py cleanup_uploads` | حذف فایل‌های موقت قدیمی |
+| `install.sh` | Idempotent, runnable from anywhere, systemd, health check |
+| `uninstall.sh` | Removes the service; data is kept by default |
+| `create-admin.sh` | Interactive or flag-driven; promotes an existing user without touching their orders |
+| `backup.sh` | Zip containing db + media + uploads + .env with a manifest and checksum |
+| `restore.sh` | Validation, automatic safety snapshot, service stop/start, migrations |
+| `manage.py cleanup_uploads` | Deletes stale temporary files |
 
 ---
 
-## ۷. پیاده‌سازی نشده (درخواست‌های آینده)
+## 7. Not implemented (future requests)
 
-- پرداخت آنلاین
-- اطلاع‌رسانی پیامکی هنگام تغییر وضعیت سفارش
-- بازیابی خودکار رمز عبور
-- دانلود گروهی STL چند سفارش در یک فایل zip
+- Online payment
+- SMS notification on order status changes
+- Automatic password recovery
+- Bulk STL download of several orders in one zip

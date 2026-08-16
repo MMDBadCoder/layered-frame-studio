@@ -1,10 +1,10 @@
-# راهنمای بهره‌برداری — قاب عکس دوبعدی
+# Operations guide — Photo Frame 2D
 
-راهنمای عملی نصب، پشتیبان‌گیری، بازیابی و عیب‌یابی.
+A practical guide to installing, backing up, restoring and troubleshooting.
 
 ---
 
-## ۱. نصب روی سرور تازه (اوبونتو)
+## 1. Installing on a fresh Ubuntu server
 
 ```bash
 git clone <repo-url> photo-frame-2d
@@ -13,108 +13,109 @@ sudo ./scripts/install.sh
 sudo ./scripts/create-admin.sh
 ```
 
-`install.sh` این کارها را انجام می‌دهد:
+`install.sh` does the following:
 
-1. نصب بسته‌های سیستمی لازم (`python3-venv`، `python3-pip`، `curl`)
-2. ساخت `.venv` و نصب `requirements.txt`
-3. ساخت `.env` با **کلید امنیتی تصادفی** (اگر وجود نداشته باشد)
-4. اجرای مهاجرت‌ها و `collectstatic`
-5. تنظیم مالکیت فایل‌های وضعیت
-6. نوشتن و راه‌اندازی سرویس systemd
-7. باز کردن پورت در ufw
-8. بررسی سلامت با درخواست HTTP واقعی
+1. Installs the required system packages (`python3-venv`, `python3-pip`, `curl`)
+2. Creates `.venv` and installs `requirements.txt`
+3. Creates `.env` with a **random secret key** (if it does not exist yet)
+4. Runs migrations and `collectstatic`
+5. Fixes ownership of the state files
+6. Writes and starts the systemd service
+7. Opens the port in ufw
+8. Health-checks the result with a real HTTP request
 
-### گزینه‌ها
+### Options
 ```bash
-sudo ./scripts/install.sh --port 9000      # پورت دیگر
-sudo ./scripts/install.sh --host 127.0.0.1 # فقط لوکال (پشت nginx)
-sudo ./scripts/install.sh --user www-data  # کاربر اجراکنندهٔ سرویس
-sudo ./scripts/install.sh --debug          # حالت توسعه (روی سرور عمومی نزنید)
-sudo ./scripts/install.sh --skip-apt       # بدون apt
+sudo ./scripts/install.sh --port 9000      # different port
+sudo ./scripts/install.sh --host 127.0.0.1 # local only (behind nginx)
+sudo ./scripts/install.sh --user www-data  # user the service runs as
+sudo ./scripts/install.sh --debug          # development mode (never on a public server)
+sudo ./scripts/install.sh --skip-apt       # skip apt
 ```
 
-### idempotent بودن
-اجرای دوباره امن است: کلید امنیتی، پایگاه داده و تصاویر دست‌نخورده می‌مانند و
-فقط وابستگی‌ها، مهاجرت‌ها، فایل‌های ایستا و فایل سرویس به‌روزرسانی می‌شوند.
-از همین دستور برای **به‌روزرسانی پس از `git pull`** استفاده کنید.
+### Idempotency
+Re-running is safe: the secret key, the database and the images are left
+untouched, and only the dependencies, migrations, static files and the service
+unit are refreshed. Use this same command to **update after a `git pull`**.
 
 ---
 
-## ۲. کار روزمره با سرویس
+## 2. Day-to-day service operations
 
 ```bash
-systemctl status photo-frame-2d          # وضعیت
-systemctl restart photo-frame-2d         # راه‌اندازی مجدد
-journalctl -u photo-frame-2d -f          # لاگ زنده
-journalctl -u photo-frame-2d -n 100      # ۱۰۰ خط آخر
+systemctl status photo-frame-2d          # status
+systemctl restart photo-frame-2d         # restart
+journalctl -u photo-frame-2d -f          # live logs
+journalctl -u photo-frame-2d -n 100      # last 100 lines
 ```
 
 ---
 
-## ۳. پشتیبان‌گیری
+## 3. Backups
 
 ```bash
-./scripts/backup.sh                       # backups/photo-frame-2d-backup-<تاریخ>.zip
+./scripts/backup.sh                       # backups/photo-frame-2d-backup-<date>.zip
 ./scripts/backup.sh --output /mnt/nas/pf.zip
-./scripts/backup.sh --keep 7              # فقط ۷ نسخهٔ آخر را نگه دار
-./scripts/backup.sh --no-uploads          # بدون فایل‌های موقت (سبک‌تر)
-./scripts/backup.sh --no-env              # بدون کلید امنیتی
+./scripts/backup.sh --keep 7              # keep only the 7 newest
+./scripts/backup.sh --no-uploads          # skip temporary files (smaller)
+./scripts/backup.sh --no-env              # skip the secret key
 ```
 
-### داخل فایل پشتیبان چیست؟
-| مسیر | محتوا |
+### What is inside a backup?
+| Path | Contents |
 |---|---|
-| `db.sqlite3` | کاربران، سفارش‌ها، پروفایل‌ها، قیمت‌ها، تنظیمات |
-| `media/` | تصاویر سفارش‌ها |
-| `uploads/` | رندرهای موقت نشست‌های فعال |
-| `.env` | کلید امنیتی و پیکربندی |
-| `manifest.json` | تاریخ، تعداد رکوردها، checksum پایگاه داده |
+| `db.sqlite3` | Users, orders, profiles, prices, settings |
+| `media/` | Order images |
+| `uploads/` | Temporary renders of live sessions |
+| `.env` | Secret key and configuration |
+| `manifest.json` | Date, record counts, database checksum |
 
-پایگاه داده با **SQLite online backup API** گرفته می‌شود، پس گرفتن پشتیبان
-هنگام روشن بودن سرویس امن است و فایل نیمه‌نوشته نمی‌دهد.
+The database is copied through the **SQLite online backup API**, so taking a
+backup while the service is running is safe and never yields a half-written
+file.
 
-> ⚠️ فایل پشتیبان شامل اطلاعات شخصی کاربران و کلید امنیتی است. آن را رمزگذاری
-> یا در جای امن نگه دارید.
+> ⚠️ A backup archive contains users' personal data and the secret key.
+> Encrypt it or keep it somewhere safe.
 
-### پشتیبان‌گیری خودکار (cron)
+### Automatic backups (cron)
 ```bash
 sudo crontab -e
-# هر شب ساعت ۳ بامداد، نگه‌داری ۱۴ نسخهٔ آخر
+# every night at 03:00, keeping the 14 newest
 0 3 * * * /home/root/projects/Photo-Frame-2D/scripts/backup.sh --keep 14 --quiet
 ```
 
 ---
 
-## ۴. بازیابی
+## 4. Restoring
 
 ```bash
-./scripts/restore.sh --inspect backups/photo-frame-2d-backup-....zip   # فقط نمایش
-sudo ./scripts/restore.sh backups/photo-frame-2d-backup-....zip        # بازیابی
+./scripts/restore.sh --inspect backups/photo-frame-2d-backup-....zip   # show only
+sudo ./scripts/restore.sh backups/photo-frame-2d-backup-....zip        # restore
 ```
 
-مراحل خودکار:
-1. اعتبارسنجی آرشیو و بررسی سلامت پایگاه داده
-2. **گرفتن نسخهٔ ایمنی از وضعیت فعلی** (`backups/pre-restore-<تاریخ>.zip`)
-3. توقف سرویس
-4. جایگزینی پایگاه داده، `media/`، `uploads/` و `.env`
-5. تنظیم مالکیت برای کاربر سرویس
-6. اجرای مهاجرت‌ها (اگر پشتیبان قدیمی‌تر باشد)
-7. راه‌اندازی سرویس و بررسی سلامت
+Automatic steps:
+1. Validate the archive and check the database's integrity
+2. **Take a safety snapshot of the current state** (`backups/pre-restore-<date>.zip`)
+3. Stop the service
+4. Replace the database, `media/`, `uploads/` and `.env`
+5. Fix ownership for the service user
+6. Run migrations (in case the backup is older)
+7. Start the service and health-check it
 
-### گزینه‌ها
+### Options
 ```bash
---skip-env     # کلید امنیتی فعلی حفظ شود
---yes          # بدون پرسش تأیید (برای اسکریپت)
---no-safety    # بدون نسخهٔ ایمنی (توصیه نمی‌شود)
+--skip-env     # keep the current secret key
+--yes          # no confirmation prompt (for scripting)
+--no-safety    # no safety snapshot (not recommended)
 ```
 
-### انتقال به سرور جدید
+### Moving to a new server
 ```bash
-# سرور قدیم
+# old server
 ./scripts/backup.sh --output /tmp/move.zip
 scp /tmp/move.zip newserver:/tmp/
 
-# سرور جدید
+# new server
 git clone <repo-url> photo-frame-2d && cd photo-frame-2d
 sudo ./scripts/install.sh
 sudo ./scripts/restore.sh /tmp/move.zip --yes
@@ -122,49 +123,49 @@ sudo ./scripts/restore.sh /tmp/move.zip --yes
 
 ---
 
-## ۵. مدیریت کاربران
+## 5. User management
 
 ```bash
-sudo ./scripts/create-admin.sh                      # تعاملی
+sudo ./scripts/create-admin.sh                      # interactive
 sudo ./scripts/create-admin.sh \
     --phone 09121234567 --email a@b.com \
-    --name "نام مدیر" --generate-password --noinput
+    --name "Admin Name" --generate-password --noinput
 ```
 
-اگر شماره از قبل وجود داشته باشد، همان حساب ارتقا می‌یابد و سفارش‌هایش
-دست‌نخورده می‌ماند.
+If the mobile number already exists, that account is promoted and its orders
+are left untouched.
 
-### تغییر رمز عبور
+### Changing a password
 ```bash
 .venv/bin/python manage.py changepassword 09121234567
 ```
 
 ---
 
-## ۶. حذف
+## 6. Uninstalling
 
 ```bash
-sudo ./scripts/uninstall.sh                 # فقط سرویس؛ داده‌ها می‌مانند
-sudo ./scripts/uninstall.sh --purge-venv    # + حذف .venv
-sudo ./scripts/uninstall.sh --remove-ufw    # + حذف قانون فایروال
-sudo ./scripts/uninstall.sh --purge-data    # + حذف همهٔ داده‌ها (تأیید می‌خواهد)
+sudo ./scripts/uninstall.sh                 # service only; data stays
+sudo ./scripts/uninstall.sh --purge-venv    # + remove .venv
+sudo ./scripts/uninstall.sh --remove-ufw    # + remove the firewall rule
+sudo ./scripts/uninstall.sh --purge-data    # + remove all data (asks for confirmation)
 ```
 
-`--purge-data` قبل از حذف، خودکار یک پشتیبان می‌گیرد.
+`--purge-data` automatically takes a backup before deleting anything.
 
 ---
 
-## ۷. نگهداری دوره‌ای
+## 7. Periodic maintenance
 
 ```bash
 .venv/bin/python manage.py cleanup_uploads --days 7 --dry-run
 .venv/bin/python manage.py cleanup_uploads --days 7
 ```
 
-پوشهٔ `uploads/` رندرهای موقت نشست‌ها را نگه می‌دارد و به‌مرور بزرگ می‌شود.
-تصاویر سفارش‌ها در `media/` هستند و **هرگز** توسط این دستور حذف نمی‌شوند.
+The `uploads/` directory holds temporary session renders and grows over time.
+Order images live in `media/` and are **never** deleted by this command.
 
-پیشنهاد cron:
+Suggested cron entry:
 ```
 30 3 * * 0 /home/root/projects/Photo-Frame-2D/.venv/bin/python \
            /home/root/projects/Photo-Frame-2D/manage.py cleanup_uploads --days 7
@@ -172,51 +173,51 @@ sudo ./scripts/uninstall.sh --purge-data    # + حذف همهٔ داده‌ها 
 
 ---
 
-## ۷٫۵ خروجی سه‌بعدی
+## 7.5 3D export
 
-ساخت STL روی خود سرور و در لحظهٔ درخواست انجام می‌شود؛ چیزی ذخیره نمی‌شود.
+STL generation happens on the server, on demand; nothing is stored.
 
-- برای یک تصویر با دقت ۴۰۰، فایل حدود **۲۰ تا ۲۵ مگابایت** و ساختش حدود
-  **۱ ثانیه** طول می‌کشد.
-- اگر فایل‌ها بزرگ‌تر از نیاز شماست، «حداکثر دقت مدل سه‌بعدی» را کم کنید؛
-  حجم تقریباً با مربع این عدد تغییر می‌کند.
-- ارتفاع کل مدل = تعداد لایه × «ارتفاع هر لایه». با ۵ لایه و ۲ میلی‌متر،
-  بلندترین نقطه ۱۰ میلی‌متر می‌شود.
+- For an image at resolution 400, the file is roughly **20–25 MB** and takes
+  about **1 second** to build.
+- If the files are larger than you need, lower the "maximum 3D model
+  resolution"; size scales roughly with the square of that number.
+- Total model height = layer count × "layer height". With 5 layers at 2 mm, the
+  tallest point is 10 mm.
 
 ---
 
-## ۸. عیب‌یابی
+## 8. Troubleshooting
 
-| نشانه | بررسی |
+| Symptom | Check |
 |---|---|
-| سرویس بالا نمی‌آید | `journalctl -u photo-frame-2d -n 50` |
-| پورت اشغال است | `ss -ltnp \| grep 8080` |
-| صفحه بدون استایل | `collectstatic` اجرا نشده → `sudo ./scripts/install.sh` |
-| خطای ۴۰۳ روی درخواست‌ها | مشکل CSRF → کوکی‌ها را پاک و صفحه را تازه کنید |
-| «تصویری یافت نشد» | فایل موقت نشست پاک شده → تصویر را دوباره بارگذاری کنید |
-| قیمت اشتباه | پنل مدیریت ← تنظیمات فروشگاه ← قیمت هر سانتی‌متر مربع |
-| کاربر نمی‌تواند سفارش دهد | سهمیهٔ ۳ سفارش بررسی‌نشده پر است |
-| سوپرپیکسل غیرفعال | نیازمند `opencv-contrib-python-headless` |
-| فایل STL خیلی بزرگ است | «حداکثر دقت مدل سه‌بعدی» را در تنظیمات فروشگاه کم کنید |
-| مدل سه‌بعدی وارونه است | گزینهٔ «وارونه کردن ارتفاع لایه‌ها» را تغییر دهید |
-| صفحهٔ اصلی تنظیمات اشتباه دارد | تنظیمات فروشگاه ← تنظیمات پیش‌فرض ساخت تصویر |
+| Service will not start | `journalctl -u photo-frame-2d -n 50` |
+| Port already in use | `ss -ltnp \| grep 8080` |
+| Page has no styling | `collectstatic` did not run → `sudo ./scripts/install.sh` |
+| 403 errors on requests | CSRF problem → clear cookies and reload the page |
+| "تصویری یافت نشد" ("image not found") | The session's temporary file was cleaned up → upload the image again |
+| Wrong price | Admin panel → site settings → price per square centimetre |
+| A user cannot place an order | Their quota of 3 unreviewed orders is full |
+| Superpixels disabled | Requires `opencv-contrib-python-headless` |
+| STL file is far too large | Lower the "maximum 3D model resolution" in the site settings |
+| The 3D model is inverted | Toggle the "invert layer heights" option |
+| The studio opens with the wrong settings | Site settings → render defaults |
 
-### بازگشت سریع پس از اشتباه
+### Quick rollback after a mistake
 ```bash
-ls -1t backups/pre-restore-*.zip | head -1     # آخرین نسخهٔ ایمنی
+ls -1t backups/pre-restore-*.zip | head -1     # the newest safety snapshot
 sudo ./scripts/restore.sh backups/pre-restore-....zip
 ```
 
 ---
 
-## ۹. سخت‌سازی برای تولید
+## 9. Hardening for production
 
-۱. **HTTPS**: پشت nginx با Let's Encrypt، و `install.sh --host 127.0.0.1`
-۲. **فایروال**:
+1. **HTTPS**: behind nginx with Let's Encrypt, plus `install.sh --host 127.0.0.1`
+2. **Firewall**:
 ```bash
-ufw allow OpenSSH      # اول این
+ufw allow OpenSSH      # this one first
 ufw enable
 ```
-۳. **`ALLOWED_HOSTS`**: در `photoframe/settings.py` به دامنهٔ واقعی محدود کنید
-۴. **کاربر جداگانه**: `sudo ./scripts/install.sh --user www-data`
-۵. **پشتیبان خارج از سرور**: فایل zip را به فضای ابری یا NAS منتقل کنید
+3. **`ALLOWED_HOSTS`**: restrict it to the real domain in `photoframe/settings.py`
+4. **A separate user**: `sudo ./scripts/install.sh --user www-data`
+5. **Off-server backups**: copy the zip to cloud storage or a NAS

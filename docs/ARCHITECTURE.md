@@ -1,46 +1,46 @@
-# معماری — قاب عکس دوبعدی
+# Architecture — Photo Frame 2D
 
 ---
 
-## ۱. نمای کلی
+## 1. Overview
 
 ```
-مرورگر (بدون فریم‌ورک JS)
+Browser (no JS framework)
    │  fetch + FormData + X-CSRFToken
    ▼
 gunicorn ──► Django 6 ──► SQLite (db.sqlite3)
    │            │
    │            ├─► main.py  ─► OpenCV / NumPy / scikit-image
-   │            └─► media/   ─► تصاویر سفارش‌ها (خصوصی)
+   │            └─► media/   ─► order images (private)
    │
    └─► WhiteNoise ─► staticfiles/
 ```
 
-هیچ سرویس جانبی‌ای لازم نیست: بدون Redis، بدون Celery، بدون PostgreSQL،
-بدون nginx (اختیاری). این عمدی است — نگهداری و پشتیبان‌گیری باید ساده بماند.
+No side services are required: no Redis, no Celery, no PostgreSQL, and nginx is
+optional. That is deliberate — maintenance and backups have to stay simple.
 
 ---
 
-## ۲. ساختار پروژه
+## 2. Project layout
 
 ```
-photoframe/          پروژهٔ جنگو: settings, urls, wsgi, asgi
-accounts/            کاربر سفارشی و احراز هویت
-  models.py          User با شماره موبایل به‌جای نام کاربری
-  backends.py        ورود با شماره موبایل یا ایمیل
-  validators.py      نرمال‌سازی ارقام فارسی و شماره موبایل
-  forms.py           فرم‌های ورود و ثبت‌نام
-  views.py           نقاط پایانی JSON برای modal
+photoframe/          Django project: settings, urls, wsgi, asgi
+accounts/            Custom user and authentication
+  models.py          User keyed by mobile number instead of a username
+  backends.py        Sign in with mobile number or email
+  validators.py      Persian digit and mobile number normalisation
+  forms.py           Sign-in and registration forms
+  views.py           JSON endpoints used by the modal
   management/commands/create_admin.py
-posterizer/          استودیو، پروفایل‌ها، سفارش‌ها
+posterizer/          Studio, profiles, orders
   models.py          SiteSettings, ColorProfile, ProfileLayer, Order
-  views.py           صفحه‌ها + API پردازش و ثبت سفارش + دانلود STL
-  admin.py           پنل مدیریت فارسی
-  stl.py             ساخت مدل سه‌بعدی از تصویر لایه‌ای
-  jalali.py          تاریخ شمسی، ارقام فارسی، قالب‌بندی تومان
-  templatetags/      فیلترهای jalali، toman، cm، fa_digits
+  views.py           Pages + processing/order APIs + STL download
+  admin.py           Persian admin panel
+  stl.py             3D model generation from the layered image
+  jalali.py          Jalali dates, Persian digits, Toman formatting
+  templatetags/      jalali, toman, cm and fa_digits filters
   management/commands/cleanup_uploads.py
-main.py              موتور پردازش تصویر (مستقل از جنگو)
+main.py              Image processing engine (independent of Django)
 templates/           base, index, orders + partials
 static/              style.css, auth.js, app.js
 scripts/             install, uninstall, create-admin, backup, restore
@@ -48,182 +48,185 @@ scripts/             install, uninstall, create-admin, backup, restore
 
 ---
 
-## ۳. مدل داده
+## 3. Data model
 
 ```
 User (accounts)
- ├─ phone (یکتا، USERNAME_FIELD)
- ├─ email (یکتا)
- ├─ is_staff  → مدیر
- └─ is_superuser → مدیر کل
+ ├─ phone (unique, USERNAME_FIELD)
+ ├─ email (unique)
+ ├─ is_staff  → admin
+ └─ is_superuser → superuser
 
-SiteSettings (تک‌نمونه، pk=1)
- ├─ اندازه: min/max_width_cm، min/max_height_cm
- ├─ قیمت: price_per_cm2، cost_rounding
- ├─ پیش‌فرض‌های استودیو: default_profile، default_preprocess_method،
- │    default_*_kernel_size، default_postprocess_method، default_min_region_size،
- │    default_preserve_edges، default_use_superpixels، …
- └─ سه‌بعدی: stl_layer_height_mm، stl_invert_heights، stl_max_resolution
+SiteSettings (singleton, pk=1)
+ ├─ size: min/max_width_cm, min/max_height_cm
+ ├─ price: price_per_cm2, cost_rounding
+ ├─ studio defaults: default_profile, default_preprocess_method,
+ │    default_*_kernel_size, default_postprocess_method, default_min_region_size,
+ │    default_preserve_edges, default_use_superpixels, …
+ └─ 3D: stl_layer_height_mm, stl_invert_heights, stl_max_resolution
 
 ColorProfile
- ├─ name، description، num_layers، is_active، sort_order
- └─ layers → ProfileLayer(index، color)
+ ├─ name, description, num_layers, is_active, sort_order
+ └─ layers → ProfileLayer(index, color)
 
 Order
  ├─ user → User
  ├─ profile → ColorProfile (SET_NULL)
- ├─ snapshot: profile_name، num_layers، colors، config
- ├─ اندازه: width_cm، height_cm، area_cm2
- ├─ قیمت: price_per_cm2، estimated_cost، final_cost
- ├─ تصاویر: result_image، original_image
- └─ بررسی: status، admin_note، reviewed_by، reviewed_at
+ ├─ snapshot: profile_name, num_layers, colors, config
+ ├─ size: width_cm, height_cm, area_cm2
+ ├─ price: price_per_cm2, estimated_cost, final_cost
+ ├─ images: result_image, original_image
+ └─ review: status, admin_note, reviewed_by, reviewed_at
 ```
 
-### چرا snapshot؟
-سفارش باید برای همیشه همان چیزی را نشان دهد که مشتری سفارش داده است. اگر مدیر
-بعداً رنگ‌های یک پروفایل یا قیمت هر cm² را عوض کند، سفارش‌های ثبت‌شده نباید
-تغییر کنند. به همین دلیل نام پروفایل، رنگ‌ها، تنظیمات و قیمت داخل خود سفارش
-کپی می‌شوند.
+### Why snapshot?
+An order must show forever exactly what the customer ordered. If an admin later
+changes a profile's colours or the price per cm², existing orders must not
+change. That is why the profile name, colours, settings and price are copied
+onto the order itself.
 
 ---
 
-## ۴. نقاط پایانی
+## 4. Endpoints
 
-| مسیر | متد | توضیح |
+| Path | Method | Description |
 |---|---|---|
-| `/` | GET | استودیو (عمومی) |
-| `/orders/` | GET | سفارش‌های من (نیازمند ورود) |
-| `/orders/<id>/image/<kind>/` | GET | تصویر سفارش (صاحب سفارش یا مدیر) |
-| `/orders/<id>/stl/` | GET | دانلود مدل سه‌بعدی (فقط مدیر) |
-| `/api/config` | GET | تنظیمات پیش‌فرض، پروفایل‌ها، محدودهٔ اندازه |
-| `/api/process` | POST | پردازش تصویر → data URL + محدودهٔ اندازه |
-| `/api/orders/create` | POST | ثبت سفارش |
-| `/api/auth/status` | GET | وضعیت ورود |
-| `/api/auth/login` | POST | ورود |
-| `/api/auth/register` | POST | ثبت‌نام |
-| `/api/auth/logout` | POST | خروج |
-| `/admin/` | — | پنل مدیریت |
+| `/` | GET | Studio (public) |
+| `/orders/` | GET | My orders (sign-in required) |
+| `/orders/<id>/image/<kind>/` | GET | Order image (owner or admin) |
+| `/orders/<id>/stl/` | GET | 3D model download (admin only) |
+| `/api/config` | GET | Defaults, profiles, size range |
+| `/api/process` | POST | Process an image → data URL + size range |
+| `/api/orders/create` | POST | Place an order |
+| `/api/auth/status` | GET | Sign-in status |
+| `/api/auth/login` | POST | Sign in |
+| `/api/auth/register` | POST | Register |
+| `/api/auth/logout` | POST | Sign out |
+| `/admin/` | — | Admin panel |
 
-همهٔ POSTها به هدر `X-CSRFToken` نیاز دارند. پاسخ‌های خطا شکل
-`{"error": "پیام فارسی"}` دارند و پاسخ‌های احراز هویت `{"ok": bool, "errors": {...}}`.
-
----
-
-## ۵. جریان پردازش تصویر
-
-```
-بایت‌های تصویر
-   ↓ Pillow → آرایهٔ خاکستری
-   ↓ پیش‌پردازش (گاوسی / میانه / دوطرفه)
-   ↓ کوانتیزه به N سطح هم‌فاصله (N از پروفایل)
-   ↓ پس‌پردازش (میانه / مورفولوژی / مؤلفه‌های همبند / اکثریت)
-   ↓ نگاشت هر سطح به رنگ لایه (جدول ۲۵۶×۳)
-PNG رنگی
-```
-
-`main.py` هیچ وابستگی‌ای به جنگو ندارد و مستقل هم قابل استفاده است.
+Every POST requires the `X-CSRFToken` header. Error responses have the shape
+`{"error": "<Persian message>"}`, and auth responses `{"ok": bool, "errors": {...}}`.
 
 ---
 
-## ۵٫۵ ساخت مدل سه‌بعدی (`posterizer/stl.py`)
+## 5. Image processing pipeline
 
 ```
-تصویر لایه‌ای سفارش
-   ↓ کوچک‌سازی با nearest (بدون درون‌یابی، تا رنگ جدید ساخته نشود)
-   ↓ نگاشت هر پیکسل به نزدیک‌ترین رنگ پالت → نقشهٔ شاخص لایه
-   ↓ اصلاح نقاط زینی (resolve_saddles)
-   ↓ شاخص → ارتفاع (لایهٔ n → n × ارتفاع پایه)
-   ↓ ساخت مش: رویه + کف + دیوارها
-STL دودویی
+image bytes
+   ↓ Pillow → greyscale array
+   ↓ pre-processing (gaussian / median / bilateral)
+   ↓ quantise to N evenly spaced levels (N comes from the profile)
+   ↓ post-processing (median / morphology / connected components / majority)
+   ↓ map each level to its layer colour (256×3 lookup table)
+colour PNG
 ```
 
-### دو نکتهٔ ظریف که مش را قابل چاپ می‌کنند
+`main.py` has no dependency on Django and can be used on its own.
 
-**۱. تقسیم دیوارها روی ارتفاع‌های استاندارد.** جایی که چهار سلول با ارتفاع‌های
-متفاوت به هم می‌رسند، دیوارهای اطراف آن گوشه بازه‌های ارتفاعی متفاوتی دارند.
-اگر هر دیوار یک مستطیل یکپارچه باشد، لبه‌ها دقیقاً بر هم منطبق نمی‌شوند و
-T-junction می‌سازند. راه‌حل: هر دیوار روی همهٔ ارتفاع‌های ممکن (که تعدادشان
-برابر تعداد لایه‌هاست) تکه‌تکه می‌شود.
+---
 
-**۲. اصلاح نقاط زینی.** در بلوک ۲×۲ زیر
+## 5.5 3D model generation (`posterizer/stl.py`)
+
+```
+the order's layered image
+   ↓ downscale with nearest neighbour (no interpolation, so no new colours appear)
+   ↓ map every pixel to the closest palette colour → layer index map
+   ↓ resolve saddle points (resolve_saddles)
+   ↓ index → height (layer n → n × base height)
+   ↓ build the mesh: top surface + floor + walls
+binary STL
+```
+
+### The two subtleties that make the mesh printable
+
+**1. Splitting walls at the standard heights.** Where four cells of differing
+heights meet, the walls around that corner span different height intervals. If
+each wall were a single rectangle, the edges would not line up exactly and
+would create T-junctions. The fix: every wall is split at all possible heights
+(there are as many of them as there are layers).
+
+**2. Resolving saddle points.** In the 2×2 block below
 
 ```
 A B
 C D
 ```
 
-اگر یک قطر کاملاً بالاتر از قطر دیگر باشد، در هر برش افقی بین آن دو، مقطع
-دو مربع می‌شود که فقط از یک نقطه به هم چسبیده‌اند — یعنی جسم روی یک خط
-باریک می‌شود و چاپ‌شدنی نیست. `resolve_saddles` گوشهٔ پایین‌تر را بالا می‌برد
-تا این باریک‌شدگی پر شود. چون فقط «بالا بردن» انجام می‌شود، حلقه یکنوا و
-پایان‌پذیر است.
+if one diagonal is strictly higher than the other, then at every horizontal
+slice between the two the cross-section becomes two squares touching at a
+single point — the solid pinches to a line and cannot be printed.
+`resolve_saddles` raises the lower corner to fill that pinch. Because it only
+ever raises, the loop is monotonic and terminates.
 
-رویهٔ بالا عمداً به نوارهای عریض ادغام **نمی‌شود**: ادغام باعث T-junction با
-دیوارهای تک‌سلولی می‌شد.
+The top surface is deliberately **not** merged into wide strips: merging would
+create T-junctions against the single-cell walls.
 
-آزمون `mesh_is_closed` بررسی می‌کند هر یال جهت‌دار دقیقاً یک بار و جفت
-معکوسش هم دقیقاً یک بار وجود داشته باشد — که هم بسته بودن و هم یکنواختی
-جهت نرمال‌ها را تضمین می‌کند.
+The `mesh_is_closed` test checks that every directed edge appears exactly once
+and its reverse exactly once — which guarantees both closure and consistent
+normal orientation.
 
-### ذخیرهٔ موقت
-- `uploads/<id>.bin` — تصویر اصلی نشست
-- `uploads/<id>.result.png` — آخرین رندر
+### Temporary storage
+- `uploads/<id>.bin` — the session's original image
+- `uploads/<id>.result.png` — the most recent render
 
-هنگام ثبت سفارش، اگر تنظیمات با آخرین رندر یکی باشد همان فایل استفاده می‌شود؛
-وگرنه از نو پردازش می‌شود. این تضمین می‌کند سفارش دقیقاً همان چیزی است که
-کاربر دیده.
+When an order is placed, the cached file is reused if the settings match the
+last render; otherwise the image is reprocessed. That guarantees the order is
+exactly what the user saw.
 
 ---
 
-## ۶. تصمیم‌های فنی مهم
+## 6. Key technical decisions
 
-| تصمیم | چرا |
+| Decision | Why |
 |---|---|
-| **SQLite** | یک فایل، پشتیبان‌گیری ساده، برای این حجم ترافیک کافی |
-| **شماره موبایل به‌جای username** | مخاطب ایرانی؛ نام کاربری معنایی ندارد |
-| **نشست پایگاه‌داده‌ای** | امکان ابطال نشست هنگام خروج |
-| **modal به‌جای صفحهٔ ورود** | تصویر ساخته‌شده نباید گم شود (اصل شمارهٔ ۲ در PRD) |
-| **پنل مدیریت جنگو** | فارسی و RTL آماده، مدیریت کاربر و مجوز رایگان |
-| **WhiteNoise** | حذف نیاز به nginx برای شروع |
-| **بدون فریم‌ورک JS** | سه فایل ساده؛ نگهداری در آینده آسان‌تر |
-| **بدون نام‌گذاری hash روی فایل‌های ایستا** | نیازمند manifest است؛ فراموشی collectstatic نباید ۵۰۰ بدهد |
-| **محاسبهٔ سمت سرور** | تعداد لایه، ارتفاع و قیمت هرگز از مرورگر پذیرفته نمی‌شوند |
+| **SQLite** | One file, trivial backups, plenty for this traffic level |
+| **Mobile number instead of username** | Iranian audience; a username carries no meaning here |
+| **Database-backed sessions** | Sessions can be invalidated on sign-out |
+| **Modal instead of a sign-in page** | The rendered image must not be lost (principle 2 in the PRD) |
+| **Django admin panel** | Persian and RTL out of the box, free user and permission management |
+| **WhiteNoise** | Removes the need for nginx to get started |
+| **No JS framework** | Three plain files; easier to maintain later |
+| **No hashed static filenames** | That would need a manifest; forgetting collectstatic must not cause a 500 |
+| **Server-side computation** | Layer count, height and price are never taken from the browser |
 
 ---
 
-## ۷. امنیت
+## 7. Security
 
-- **CSRF** روی همهٔ POSTها؛ توکن جدید پس از ورود برگردانده می‌شود
-- **محدودسازی ورود**: ۱۰ تلاش ناموفق در ۵ دقیقه به ازای هر IP
-- **تصاویر خصوصی**: از طریق ویو با بررسی مالکیت، نه سرو مستقیم
-- **حفظ نشست هنگام ورود**: `image_id` صریحاً منتقل می‌شود
-- **اعتبارسنجی سمت سرور** برای تعداد لایه، اندازه و قیمت
-- **`.env` با مجوز 600** و خارج از گیت
-- **`DEBUG=0`** پیش‌فرض `install.sh`
+- **CSRF** on every POST; a fresh token is returned after sign-in
+- **Sign-in rate limiting**: 10 failed attempts per IP in 5 minutes
+- **Private images**: served through a view with an ownership check, not directly
+- **Session preservation on sign-in**: `image_id` is carried over explicitly
+- **Server-side validation** of layer count, size and price
+- **`.env` with mode 600**, kept out of git
+- **`DEBUG=0`** is the `install.sh` default
 
-### محدودیت‌های شناخته‌شده
-- HTTP بدون TLS — برای تولید باید پشت nginx با HTTPS قرار گیرد
-- سرویس با کاربر مالک پوشه اجرا می‌شود (روی این سرور: root)
+### Known limitations
+- Plain HTTP, no TLS — production deployments must sit behind nginx with HTTPS
+- The service runs as the project directory's owner (on this server: root)
 - `ALLOWED_HOSTS = ["*"]`
 
 ---
 
-## ۸. آزمون‌ها
+## 8. Tests
 
 ```bash
 .venv/bin/python manage.py test
 ```
 
-۵۶ آزمون در `posterizer/tests.py`:
+56 tests in `posterizer/tests.py`:
 
-| کلاس | پوشش |
+| Class | Coverage |
 |---|---|
-| `PublicStudioTests` | دسترسی مهمان، رنگ‌ها، اعتبارسنجی ورودی |
-| `AuthTests` | ثبت‌نام، ورود، **حفظ تصویر هنگام ورود** |
-| `OrderTests` | ثبت، سهمیهٔ ۳تایی، حریم خصوصی تصاویر |
-| `FrameSizeAndCostTests` | نسبت، محدوده، قیمت، ضدّ دستکاری |
-| `RenderDefaultsTests` | پیش‌فرض‌های قابل تنظیم و اولویت انتخاب کاربر |
-| `StlExportTests` | ارتفاع لایه‌ها، ابعاد، **watertight بودن**، دسترسی |
-| `ColorProfileTests` | همگام‌سازی لایه‌ها، پروفایل غیرفعال |
-| `PageTitleTests` | کوتاه بودن عنوان صفحه |
-| `AdminPanelTests` | دسترسی، تغییر وضعیت، عملیات گروهی |
+| `PublicStudioTests` | Guest access, colours, input validation |
+| `AuthTests` | Registration, sign-in, **image survival across sign-in** |
+| `OrderTests` | Submission, the 3-order quota, image privacy |
+| `FrameSizeAndCostTests` | Ratio, range, price, anti-tampering |
+| `RenderDefaultsTests` | Configurable defaults and user-choice precedence |
+| `StlExportTests` | Layer heights, dimensions, **watertightness**, access control |
+| `ColorProfileTests` | Layer syncing, inactive profiles |
+| `PageTitleTests` | Page title length |
+| `AdminPanelTests` | Access, status changes, bulk actions |
+
+Test assertions match the Persian UI strings on purpose — the UI is Persian, so
+the assertions have to be too.
