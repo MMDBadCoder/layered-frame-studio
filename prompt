@@ -1,7 +1,0 @@
-it worked nice
-let add some features
-i want to make colors of the Grayscale levels customized, add another config to it
-near Grayscale levels setting on the ui add some colors to select and then pass it to the backend and when want to generate the new image use that color instead white and black
-also add a .sh file to run it on the linux servers when want to run the server on an ubuntu machine(current machine is windows)
-after that i want another new feature, i want a button that tell me download the 3d stl model file of the generated image, when you click on it, it will generate the image and then make a 3d stl model file from it, the stl model has this property that each Grayscale levels has its own height, the more bold colored areas has higher height and near white colors has lower height, it means we have a 3d model that have different height in its different areas, and another config must be added that tell us size of whole generating 3d plate, it must have a variable that tell us width of the plate for example, one aspect is enough becuase we don't want to change ratio of generating image and we only want to determine size of generating 3d frame
-and also another config that tell us height of each Grayscale levels, it means how much height we must add for each level increment?
