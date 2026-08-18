@@ -1012,9 +1012,17 @@ class ReadyImageTests(StudioTestCase):
         html = self.client.get("/").content.decode()
         self.assertIn('data-mode="studio"', html)
         self.assertIn('data-mode="ready"', html)
-        self.assertIn("تصویر آمادهٔ خودم را دارم", html)
+        self.assertIn("ساخت با ابزار ما", html)
+        self.assertIn("تصویر آماده دارم", html)
         self.assertIn("Nano Banana Pro", html)
         self.assertIn('id="aiPrompt"', html)
+
+        # The switch is a compact segmented control, and the AI guide lives in
+        # the canvas (where it has room), not squeezed into the sidebar.
+        self.assertIn('class="segmented"', html)
+        self.assertIn('id="segmentedThumb"', html)
+        self.assertEqual(html.count('id="aiPrompt"'), 1)
+        self.assertIn('class="ai-guide"', html)
 
     def test_ai_helper_can_be_hidden(self):
         site = SiteSettings.load()

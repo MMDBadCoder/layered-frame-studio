@@ -23,6 +23,9 @@
   const paletteLayers = byId("paletteLayers");
   const paletteDescription = byId("paletteDescription");
 
+  const modeSwitch = byId("modeSwitch");
+  const segmentedThumb = byId("segmentedThumb");
+  const readyIntro = byId("readyIntro");
   const readyZone = byId("readyZone");
   const readyInput = byId("readyInput");
   const readyBrowseBtn = byId("readyBrowseBtn");
@@ -311,6 +314,7 @@
 
   function showPreview(originalUrl, resultUrl) {
     uploadZone.classList.add("hidden");
+    if (readyIntro) readyIntro.classList.add("hidden");
     previewGrid.classList.remove("hidden");
 
     originalPreview.src = originalUrl;
@@ -373,13 +377,35 @@
     return mode === "ready";
   }
 
+  /*
+   * Slide the highlight onto the active option. Measured rather than hard-coded
+   * because the two labels differ in width, and Vazirmatn loads asynchronously
+   * so the widths change once the font arrives.
+   */
+  function positionThumb() {
+    if (!modeSwitch || !segmentedThumb) return;
+
+    const active = modeSwitch.querySelector(".segmented-option.is-active");
+    if (!active) return;
+
+    const track = modeSwitch.getBoundingClientRect();
+    const option = active.getBoundingClientRect();
+
+    segmentedThumb.style.width = `${option.width}px`;
+    segmentedThumb.style.transform =
+      `translateX(${option.left - track.left - modeSwitch.clientLeft}px)`;
+  }
+
   function setMode(next) {
     if (mode === next) return;
     mode = next;
 
     document.querySelectorAll("[data-mode]").forEach((btn) => {
-      btn.classList.toggle("is-active", btn.dataset.mode === next);
+      const on = btn.dataset.mode === next;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
     });
+    positionThumb();
     document.querySelectorAll(".studio-only").forEach((el) => el.classList.toggle("hidden", isReady()));
     document.querySelectorAll(".ready-only").forEach((el) => el.classList.toggle("hidden", !isReady()));
 
@@ -397,7 +423,7 @@
 
     previewGrid.classList.add("hidden");
     uploadZone.classList.toggle("hidden", isReady());
-    if (readyZone) readyZone.classList.toggle("hidden", !isReady());
+    if (readyIntro) readyIntro.classList.toggle("hidden", !isReady());
 
     if (readyResult) readyResult.classList.add("hidden");
     if (readyPending) readyPending.classList.remove("hidden");
@@ -710,6 +736,12 @@
   });
 
   document.addEventListener("pf:account", updateOrderState);
+
+  positionThumb();
+  window.addEventListener("resize", positionThumb);
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(positionThumb);
+  }
 
   renderPalette();
   updateConditionalFields();

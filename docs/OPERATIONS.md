@@ -214,6 +214,7 @@ is needed.
 | Service will not start | `journalctl -u photo-frame-2d -n 50` |
 | Port already in use | `ss -ltnp \| grep 8080` |
 | Page has no styling | `collectstatic` did not run → `sudo ./scripts/install.sh` |
+| CSS/JS edits are not visible | With `DEBUG=0`, WhiteNoise serves `staticfiles/`, not `static/`. Run `manage.py collectstatic --noinput` and restart, or just `sudo ./scripts/install.sh` |
 | 403 errors on requests | CSRF problem → clear cookies and reload the page |
 | "تصویری یافت نشد" ("image not found") | The session's temporary file was cleaned up → upload the image again |
 | Wrong price | Admin panel → site settings → price per square centimetre |

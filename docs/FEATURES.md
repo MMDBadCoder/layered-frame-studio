@@ -196,8 +196,10 @@ on each order's page.
 ## 4.6 Ready-made images (second order path)
 
 Customers who already built a layered image elsewhere can order it directly,
-without going through the studio. The home page carries a two-way mode switch:
-"ساخت تصویر با ابزار ما" and "تصویر آمادهٔ خودم را دارم".
+without going through the studio. A compact segmented control sits in a slim
+toolbar under the header — "ساخت با ابزار ما" and "تصویر آماده دارم" — with a
+highlight that slides between the two. It is sized to its labels (about 310 px)
+and centred, not stretched across the workspace.
 
 ### What gets checked
 An uploaded image is only accepted if it is genuinely built from a small set of
@@ -243,10 +245,17 @@ Switching back to the studio mode clears the verified ready image, so the two
 paths can never be mixed in one order.
 
 ### The suggested workflow
-Beside the upload area sits a card telling the customer how to produce a
-suitable image: send their photo to an AI model with a ready-written prompt,
-then upload the result. The model name, an optional link and the prompt text
-are all editable in the admin, and the prompt has a one-click copy button.
+Ready mode fills the canvas with a two-column panel: the upload zone on one
+side and a guide card on the other. The card carries a "روش پیشنهادی" badge,
+three numbered steps, the prompt itself in a scrollable monospace block, and a
+copy button.
+
+It lives in the canvas rather than the 340 px sidebar deliberately — the prompt
+is a long block of Latin text and needs the width to stay readable. On screens
+narrower than 900 px the two columns stack.
+
+The model name, an optional link and the prompt text are all editable in the
+admin.
 
 ---
 
