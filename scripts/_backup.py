@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Build a Photo Frame 2D state archive.
+Build a Photo Frame 3D state archive.
 
 Everything that is NOT in a fresh clone of the repo goes in here:
 
@@ -88,7 +88,7 @@ def add_tree(archive: zipfile.ZipFile, root: Path, arc_root: str, entries: list)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Create a Photo Frame 2D state archive.")
+    parser = argparse.ArgumentParser(description="Create a Photo Frame 3D state archive.")
     parser.add_argument("--project-dir", required=True)
     parser.add_argument("--output", required=True, help="destination .zip path")
     parser.add_argument("--no-uploads", action="store_true", help="skip the scratch uploads/ dir")
@@ -104,7 +104,7 @@ def main() -> int:
 
     manifest = {
         "format_version": FORMAT_VERSION,
-        "application": "photo-frame-2d",
+        "application": "photo-frame-3d",
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "hostname": os.uname().nodename,
         "source_project_dir": str(project),

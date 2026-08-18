@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Photo Frame 2D — create or promote a super admin.
+# Photo Frame 3D — create or promote a super admin.
 #
 #   ./scripts/create-admin.sh
 #   ./scripts/create-admin.sh --phone 09121234567 --email a@b.com --generate-password

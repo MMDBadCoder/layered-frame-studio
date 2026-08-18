@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared helpers for the Photo Frame 2D maintenance scripts.
+# Shared helpers for the Photo Frame 3D maintenance scripts.
 # Sourced by install.sh / uninstall.sh / backup.sh / restore.sh / create-admin.sh.
 
 set -euo pipefail
@@ -9,9 +9,15 @@ set -euo pipefail
 _COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$_COMMON_DIR/.." && pwd)"
 
-APP_NAME="photo-frame-2d"
+APP_NAME="photo-frame-3d"
 SERVICE_NAME="${APP_NAME}.service"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}"
+
+# The unit was called photo-frame-2d before the product was renamed. Installs
+# that predate the rename still have it, so it has to be retired explicitly or
+# two units would run against the same port.
+LEGACY_SERVICE_NAME="photo-frame-2d.service"
+LEGACY_SERVICE_FILE="/etc/systemd/system/${LEGACY_SERVICE_NAME}"
 
 VENV_DIR="${PROJECT_DIR}/.venv"
 PYTHON_BIN="${VENV_DIR}/bin/python"
@@ -71,6 +77,19 @@ app_port() {
 # --- service -----------------------------------------------------------------
 
 service_installed() { [ -f "$SERVICE_FILE" ]; }
+
+# Stop and delete the pre-rename unit, if one is still around.
+retire_legacy_service() {
+  has_systemd || return 0
+  [ -f "$LEGACY_SERVICE_FILE" ] || return 0
+
+  systemctl stop "$LEGACY_SERVICE_NAME" 2>/dev/null || true
+  systemctl disable --quiet "$LEGACY_SERVICE_NAME" 2>/dev/null || true
+  rm -f "$LEGACY_SERVICE_FILE"
+  systemctl daemon-reload
+  systemctl reset-failed "$LEGACY_SERVICE_NAME" 2>/dev/null || true
+  ok "retired the old ${LEGACY_SERVICE_NAME}"
+}
 service_active()    { has_systemd && systemctl is-active --quiet "$SERVICE_NAME"; }
 
 # Poll the HTTP endpoint until it answers or we run out of patience.

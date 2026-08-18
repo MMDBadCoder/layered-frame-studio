@@ -1,4 +1,4 @@
-# Feature reference — Photo Frame 2D
+# Feature reference — Photo Frame 3D
 
 The exact behaviour of every feature, for future reference. Each one is covered
 by an automated test in `posterizer/tests.py` (72 tests).
@@ -38,7 +38,7 @@ A method's fields are shown only while that method is selected.
 - An order always records the settings of the **displayed image**, not the live form
 
 ### 1.5 Download
-The layered image as a PNG named `photo-frame-2d.png`.
+The layered image as a PNG named `photo-frame-3d.png`.
 
 ---
 

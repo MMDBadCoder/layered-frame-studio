@@ -1,4 +1,4 @@
-"""WSGI config for the Photo Frame 2D project."""
+"""WSGI config for the Photo Frame 3D project."""
 
 import os
 

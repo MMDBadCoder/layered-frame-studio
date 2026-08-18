@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Photo Frame 2D — remove the systemd service.
+# Photo Frame 3D — remove the systemd service.
 #
 # By default ONLY the service is removed. Your database, uploaded images and
 # .env are never touched unless you explicitly ask for it.
@@ -45,6 +45,7 @@ done
 require_root "$@"
 
 step "Stopping the service"
+retire_legacy_service
 if has_systemd && service_installed; then
   systemctl stop "$SERVICE_NAME" 2>/dev/null || true
   systemctl disable --quiet "$SERVICE_NAME" 2>/dev/null || true

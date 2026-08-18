@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Restore a Photo Frame 2D state archive produced by _backup.py.
+Restore a Photo Frame 3D state archive produced by _backup.py.
 
 Replaces the database, order images and (optionally) the secret key with the
 contents of the archive. Called by scripts/restore.sh, which stops the service
@@ -21,6 +21,10 @@ from pathlib import Path
 MANIFEST_NAME = "manifest.json"
 SUPPORTED_FORMATS = {1}
 
+# Archives written before the product was renamed from 2D to 3D declare the old
+# application name. They restore perfectly well, so both are accepted.
+ACCEPTED_APPLICATIONS = {"photo-frame-3d", "photo-frame-2d"}
+
 
 def fail(message: str) -> None:
     print(f"error: {message}", file=sys.stderr)
@@ -31,14 +35,14 @@ def read_manifest(archive: zipfile.ZipFile) -> dict:
     try:
         raw = archive.read(MANIFEST_NAME)
     except KeyError:
-        fail("this is not a valid Photo Frame 2D backup (no manifest.json).")
+        fail("this is not a valid Photo Frame 3D backup (no manifest.json).")
 
     try:
         manifest = json.loads(raw)
     except json.JSONDecodeError:
         fail("manifest.json is corrupt.")
 
-    if manifest.get("application") != "photo-frame-2d":
+    if manifest.get("application") not in ACCEPTED_APPLICATIONS:
         fail("this backup belongs to a different application.")
 
     version = manifest.get("format_version")
@@ -79,7 +83,7 @@ def replace_tree(staged: Path, target: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Restore a Photo Frame 2D state archive.")
+    parser = argparse.ArgumentParser(description="Restore a Photo Frame 3D state archive.")
     parser.add_argument("--project-dir", required=True)
     parser.add_argument("--archive", required=True)
     parser.add_argument("--skip-env", action="store_true", help="keep the current .env")

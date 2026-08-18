@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Photo Frame 2D — package everything worth keeping into one .zip.
+# Photo Frame 3D — package everything worth keeping into one .zip.
 #
 # Captures the database, all order images, live session renders and the secret
 # key. Safe to run while the service is up (the database is snapshotted with
 # SQLite's online backup API, not copied byte-for-byte).
 #
-#   ./scripts/backup.sh                        # -> backups/photo-frame-2d-backup-<date>.zip
+#   ./scripts/backup.sh                        # -> backups/photo-frame-3d-backup-<date>.zip
 #   ./scripts/backup.sh --output /mnt/nas/pf.zip
 #   ./scripts/backup.sh --no-uploads --no-env
 #
@@ -23,7 +23,7 @@ usage() {
   cat <<'USAGE'
 Usage: ./scripts/backup.sh [options]
 
-  --output <path>   output file path (default: backups/photo-frame-2d-backup-<date>.zip)
+  --output <path>   output file path (default: backups/photo-frame-3d-backup-<date>.zip)
   --dir <path>      directory to write backups into
   --no-uploads      exclude the temporary files in uploads/
   --no-env          exclude the .env file (the secret key)
@@ -48,7 +48,7 @@ done
 
 if [ -z "$OUTPUT" ]; then
   mkdir -p "$BACKUP_DIR"
-  OUTPUT="${BACKUP_DIR}/photo-frame-2d-backup-$(date +%Y%m%d-%H%M%S).zip"
+  OUTPUT="${BACKUP_DIR}/photo-frame-3d-backup-$(date +%Y%m%d-%H%M%S).zip"
 fi
 
 # The helper is stdlib-only, so fall back to the system python if the
@@ -78,9 +78,10 @@ PY
   ok "backup complete"
 fi
 
-# Retention: keep only the newest N archives in the backup directory.
+# Retention: keep only the newest N archives. The glob is deliberately loose
+# so archives named before the 2D->3D rename are still pruned.
 if [ "$KEEP" -gt 0 ] && [ -d "$BACKUP_DIR" ]; then
-  mapfile -t OLD < <(ls -1t "$BACKUP_DIR"/photo-frame-2d-backup-*.zip 2>/dev/null | tail -n +$((KEEP + 1)))
+  mapfile -t OLD < <(ls -1t "$BACKUP_DIR"/photo-frame-*-backup-*.zip 2>/dev/null | tail -n +$((KEEP + 1)))
   if [ ${#OLD[@]} -gt 0 ]; then
     rm -f "${OLD[@]}"
     [ "$QUIET" -eq 1 ] || info "${#OLD[@]} old backup(s) deleted (keeping: $KEEP)"

@@ -1,4 +1,4 @@
-# Product Requirements Document (PRD) — Photo Frame 2D
+# Product Requirements Document (PRD) — Photo Frame 3D
 
 > For release v1.0.0 — last updated 2026-08-18 (27 Mordad 1405)
 
@@ -6,7 +6,7 @@
 
 ## 1. Product summary
 
-Photo Frame 2D is a Persian web application that converts a user's photograph
+Photo Frame 3D is a Persian web application that converts a user's photograph
 into an image made of a limited number of "colour layers" — exactly what is
 needed to build a physical multi-layer frame out of wood, acrylic or cardboard.
 The user sees the result live, chooses a frame size, sees an approximate price

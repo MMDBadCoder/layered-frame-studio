@@ -121,7 +121,7 @@ class MeshBuilder:
     def triangle_count(self) -> int:
         return len(self._triangles)
 
-    def to_stl_bytes(self, header: str = "Photo Frame 2D") -> bytes:
+    def to_stl_bytes(self, header: str = "Photo Frame 3D") -> bytes:
         buffer = io.BytesIO()
         buffer.write(header.encode("ascii", "replace")[:80].ljust(80, b"\0"))
         buffer.write(struct.pack("<I", len(self._triangles)))
@@ -269,7 +269,7 @@ def order_to_stl(
     width_mm: float,
     height_mm: float,
     max_resolution: int = 400,
-    header: str = "Photo Frame 2D",
+    header: str = "Photo Frame 3D",
 ) -> tuple:
     """
     Render an order's layered image into binary STL bytes.

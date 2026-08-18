@@ -1,4 +1,4 @@
-# Layered Frame Studio — Photo Frame 2D
+# Layered Frame Studio — Photo Frame 3D
 
 A Persian, right-to-left web studio that turns a photograph into a layered
 poster image using an admin-defined colour palette, then lets the customer order

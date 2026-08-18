@@ -4,6 +4,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.0.1] — 2026-08-18
+
+### Changed
+- The product is called **Photo Frame 3D** everywhere. The Persian UI was
+  renamed in 0.5.0; this completes the sweep across the README, the `docs/`
+  folder, the maintenance scripts, code comments, the systemd unit, the STL
+  file header and the names of downloaded files. It builds a 3D layered frame,
+  not a flat one.
+- The systemd unit is now `photo-frame-3d.service`. `install.sh` and
+  `uninstall.sh` retire a leftover `photo-frame-2d.service` first, so a machine
+  installed before the rename does not end up running two units on one port.
+- Backup archives declare `photo-frame-3d` and are named accordingly.
+
+### Compatibility
+- **Archives made before the rename still restore.** They declare the old
+  application name, which `restore.sh` would otherwise reject as belonging to a
+  different program; both names are accepted.
+- Backup retention matches either naming scheme, so older archives are still
+  pruned by `--keep`.
+- Documented cron examples use a placeholder path instead of a hardcoded one.
+  The project directory itself is deliberately not renamed: the virtualenv's
+  shebangs and the systemd unit's paths point at it.
+
+---
+
 ## [1.0.0] — 2026-08-18
 
 First stable release.

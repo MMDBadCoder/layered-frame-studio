@@ -1,4 +1,4 @@
-# Operations guide — Photo Frame 2D
+# Operations guide — Photo Frame 3D
 
 A practical guide to installing, backing up, restoring and troubleshooting.
 
@@ -7,8 +7,8 @@ A practical guide to installing, backing up, restoring and troubleshooting.
 ## 1. Installing on a fresh Ubuntu server
 
 ```bash
-git clone <repo-url> photo-frame-2d
-cd photo-frame-2d
+git clone <repo-url> photo-frame-3d
+cd photo-frame-3d
 sudo ./scripts/install.sh
 sudo ./scripts/create-admin.sh
 ```
@@ -43,10 +43,10 @@ unit are refreshed. Use this same command to **update after a `git pull`**.
 ## 2. Day-to-day service operations
 
 ```bash
-systemctl status photo-frame-2d          # status
-systemctl restart photo-frame-2d         # restart
-journalctl -u photo-frame-2d -f          # live logs
-journalctl -u photo-frame-2d -n 100      # last 100 lines
+systemctl status photo-frame-3d          # status
+systemctl restart photo-frame-3d         # restart
+journalctl -u photo-frame-3d -f          # live logs
+journalctl -u photo-frame-3d -n 100      # last 100 lines
 ```
 
 ---
@@ -54,7 +54,7 @@ journalctl -u photo-frame-2d -n 100      # last 100 lines
 ## 3. Backups
 
 ```bash
-./scripts/backup.sh                       # backups/photo-frame-2d-backup-<date>.zip
+./scripts/backup.sh                       # backups/photo-frame-3d-backup-<date>.zip
 ./scripts/backup.sh --output /mnt/nas/pf.zip
 ./scripts/backup.sh --keep 7              # keep only the 7 newest
 ./scripts/backup.sh --no-uploads          # skip temporary files (smaller)
@@ -81,7 +81,7 @@ file.
 ```bash
 sudo crontab -e
 # every night at 03:00, keeping the 14 newest
-0 3 * * * /home/root/projects/Photo-Frame-2D/scripts/backup.sh --keep 14 --quiet
+0 3 * * * /path/to/layered-frame-studio/scripts/backup.sh --keep 14 --quiet
 ```
 
 ---
@@ -89,8 +89,8 @@ sudo crontab -e
 ## 4. Restoring
 
 ```bash
-./scripts/restore.sh --inspect backups/photo-frame-2d-backup-....zip   # show only
-sudo ./scripts/restore.sh backups/photo-frame-2d-backup-....zip        # restore
+./scripts/restore.sh --inspect backups/photo-frame-3d-backup-....zip   # show only
+sudo ./scripts/restore.sh backups/photo-frame-3d-backup-....zip        # restore
 ```
 
 Automatic steps:
@@ -116,7 +116,7 @@ Automatic steps:
 scp /tmp/move.zip newserver:/tmp/
 
 # new server
-git clone <repo-url> photo-frame-2d && cd photo-frame-2d
+git clone <repo-url> photo-frame-3d && cd photo-frame-3d
 sudo ./scripts/install.sh
 sudo ./scripts/restore.sh /tmp/move.zip --yes
 ```
@@ -167,8 +167,8 @@ Order images live in `media/` and are **never** deleted by this command.
 
 Suggested cron entry:
 ```
-30 3 * * 0 /home/root/projects/Photo-Frame-2D/.venv/bin/python \
-           /home/root/projects/Photo-Frame-2D/manage.py cleanup_uploads --days 7
+30 3 * * 0 /path/to/layered-frame-studio/.venv/bin/python \
+           /path/to/layered-frame-studio/manage.py cleanup_uploads --days 7
 ```
 
 ---
@@ -212,7 +212,7 @@ is needed.
 ```bash
 .venv/bin/python scripts/make_logo.py path/to/new-logo.png
 .venv/bin/python manage.py collectstatic --noinput
-systemctl restart photo-frame-2d
+systemctl restart photo-frame-3d
 ```
 
 The script writes every brand asset from one source image: the inline SVG the
@@ -236,7 +236,7 @@ Pass `--accent` or `--background` if either differs from the defaults
 
 | Symptom | Check |
 |---|---|
-| Service will not start | `journalctl -u photo-frame-2d -n 50` |
+| Service will not start | `journalctl -u photo-frame-3d -n 50` |
 | Port already in use | `ss -ltnp \| grep 8080` |
 | Page has no styling | `collectstatic` did not run → `sudo ./scripts/install.sh` |
 | CSS/JS edits are not visible | With `DEBUG=0`, WhiteNoise serves `staticfiles/`, not `static/`. Run `manage.py collectstatic --noinput` and restart, or just `sudo ./scripts/install.sh` |

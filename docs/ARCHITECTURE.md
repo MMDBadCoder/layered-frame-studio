@@ -1,4 +1,4 @@
-# Architecture — Photo Frame 2D
+# Architecture — Photo Frame 3D
 
 ---
 

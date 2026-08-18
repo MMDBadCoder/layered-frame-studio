@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# Photo Frame 2D — restore state from a backup archive.
+# Photo Frame 3D — restore state from a backup archive.
 #
 # Takes the .zip produced by backup.sh and injects the whole state back into
 # the application: database, order images, live renders and the secret key.
 #
-#   sudo ./scripts/restore.sh backups/photo-frame-2d-backup-20260817-0130.zip
+#   sudo ./scripts/restore.sh backups/photo-frame-3d-backup-20260817-0130.zip
 #   ./scripts/restore.sh --inspect <file.zip>     # just show what is inside
 #
 # Before overwriting anything it takes a safety snapshot of the CURRENT state,

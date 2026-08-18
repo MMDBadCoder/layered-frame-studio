@@ -625,7 +625,7 @@
     if (!resultPreview.src) return;
     const link = document.createElement("a");
     link.href = resultPreview.src;
-    link.download = "photo-frame-2d.png";
+    link.download = "photo-frame-3d.png";
     link.click();
   });
 

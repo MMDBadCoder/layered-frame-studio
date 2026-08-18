@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Photo Frame 2D — full installer for Ubuntu/Debian servers.
+# Photo Frame 3D — full installer for Ubuntu/Debian servers.
 #
 # Idempotent: run it as often as you like. It installs system packages, builds
 # the virtualenv, applies migrations, collects static files, writes a systemd
@@ -48,7 +48,7 @@ done
 
 require_root "$@"
 
-printf '%s\n' "${C_BOLD}Installing Photo Frame 2D${C_RESET}"
+printf '%s\n' "${C_BOLD}Installing Photo Frame 3D${C_RESET}"
 info "project directory: $PROJECT_DIR"
 info "port: $PORT"
 
@@ -98,7 +98,7 @@ step "Configuration (.env)"
 if [ ! -f "$ENV_FILE" ]; then
   SECRET="$("$PYTHON_BIN" -c 'import secrets; print(secrets.token_urlsafe(64))')"
   cat > "$ENV_FILE" <<EOF
-# Photo Frame 2D — runtime environment settings
+# Photo Frame 3D — runtime environment settings
 # This file holds the application's secret key; never publish it.
 PHOTO_FRAME_SECRET_KEY=${SECRET}
 PHOTO_FRAME_DEBUG=${WANT_DEBUG}
@@ -164,6 +164,7 @@ ok "the service will run as $RUN_AS"
 # --- 6. systemd service ------------------------------------------------------
 
 step "systemd service"
+retire_legacy_service
 if ! has_systemd; then
   warn "systemd is not available; skipping this step."
   warn "start the app manually:  ./run.sh"
@@ -173,7 +174,7 @@ else
 
   cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=Photo Frame 2D — layered photo frame studio
+Description=Photo Frame 3D — layered photo frame studio
 Documentation=file://${PROJECT_DIR}/README.md
 After=network-online.target
 Wants=network-online.target
@@ -212,7 +213,7 @@ fi
 
 step "Firewall"
 if have ufw; then
-  ufw allow "${PORT}/tcp" comment "Photo Frame 2D" >/dev/null 2>&1 || true
+  ufw allow "${PORT}/tcp" comment "Photo Frame 3D" >/dev/null 2>&1 || true
   if ufw status 2>/dev/null | grep -q "Status: active"; then
     ok "ufw rule for port ${PORT} is active"
   else

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Start the Photo Frame 2D Django server.
+# Start the Photo Frame 3D Django server.
 #
 #   ./run.sh              -> http://0.0.0.0:8080
 #   HOST=127.0.0.1 PORT=9000 ./run.sh
@@ -29,5 +29,5 @@ case "${PHOTO_FRAME_DEBUG:-1}" in
   0|false|False|no|off) EXTRA+=(--insecure) ;;
 esac
 
-echo "Serving Photo Frame 2D on http://$HOST:$PORT"
+echo "Serving Photo Frame 3D on http://$HOST:$PORT"
 exec "$VENV_DIR/bin/python" manage.py runserver "${EXTRA[@]}" "$HOST:$PORT"

@@ -1,4 +1,4 @@
-"""Django settings for the Photo Frame 2D project."""
+"""Django settings for the Photo Frame 3D project."""
 
 import os
 import sys
@@ -42,7 +42,7 @@ def _env_flag(name: str, default: bool) -> bool:
     return raw.strip().lower() in ("1", "true", "on", "yes")
 
 
-SECRET_KEY = os.environ.get("PHOTO_FRAME_SECRET_KEY", "photo-frame-2d-dev-key")
+SECRET_KEY = os.environ.get("PHOTO_FRAME_SECRET_KEY", "photo-frame-3d-dev-key")
 
 DEBUG = _env_flag("PHOTO_FRAME_DEBUG", True)
 

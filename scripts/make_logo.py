@@ -162,7 +162,7 @@ def main():
     tile.convert("RGB").save(out / "icon-180.png")
     print("  wrote logo.png (512) and icon-16/32/180.png")
 
-    print("\nnow run:  manage.py collectstatic --noinput  &&  systemctl restart photo-frame-2d")
+    print("\nnow run:  manage.py collectstatic --noinput  &&  systemctl restart photo-frame-3d")
 
 
 if __name__ == "__main__":
