@@ -221,7 +221,7 @@ is needed.
 | A user cannot place an order | Their quota of 3 unreviewed orders is full |
 | Superpixels disabled | Requires `opencv-contrib-python-headless` |
 | STL file is far too large | Lower the "maximum 3D model resolution" in the site settings |
-| The 3D model is inverted | Toggle the "invert layer heights" option |
+| The 3D model is upside down (light areas raised) | Site settings → tick "تیره‌ترین لایه بلندترین باشد" |
 | The studio opens with the wrong settings | Site settings → render defaults |
 
 ### Quick rollback after a mistake

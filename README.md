@@ -116,10 +116,10 @@ Anything that does not exist in a fresh clone and has to survive:
 From any order's page in the admin panel, use the **دانلود فایل STL**
 ("Download STL file") button.
 
-Every palette colour becomes a terrace: layer 1 at height `x`, layer 2 at `2x`,
-layer 3 at `3x`, and so on. The value of `x` ("layer height"), its direction and
-the model resolution are all editable under **Site settings** in the admin
-panel. The plate's footprint matches the ordered frame size exactly.
+Every palette colour becomes a terrace at a consecutive multiple of the base
+height `x`, with the **darkest colour tallest** — dark areas are the deep ones
+on a layered frame. The value of `x`, the direction and the model resolution
+are all editable under **Site settings** in the admin panel. The plate's footprint matches the ordered frame size exactly.
 
 The output is a closed, manifold solid with outward-facing normals — ready to
 slice in any slicer. The algorithm is described in

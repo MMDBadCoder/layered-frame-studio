@@ -76,7 +76,7 @@ class SiteSettingsAdmin(admin.ModelAdmin):
         (
             "خروجی سه‌بعدی (STL)",
             {
-                "fields": ("stl_layer_height_mm", "stl_invert_heights", "stl_max_resolution", "stl_preview"),
+                "fields": ("stl_layer_height_mm", "stl_dark_is_tallest", "stl_max_resolution", "stl_preview"),
                 "description": (
                     "مدل سه‌بعدی از روی تصویر لایه‌ای سفارش ساخته می‌شود: هر رنگ یک "
                     "پله با ارتفاع مخصوص خودش. فایل STL از صفحهٔ هر سفارش قابل دانلود است."

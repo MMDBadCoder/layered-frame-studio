@@ -4,6 +4,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.2.1] — 2026-08-18
+
+### Fixed
+- **The 3D model was built upside down.** The darkest colour received the
+  shortest step and the lightest the tallest, which is backwards for a layered
+  frame: dark areas are the deep ones. Reported after a real print.
+- `stl_invert_heights` (default False) is replaced by `stl_dark_is_tallest`
+  (default True). The old flag was also confusingly named — a boolean called
+  "invert" whose default is the inverted state. Existing installations are
+  moved to the corrected behaviour by migration 0008; the previous value is
+  deliberately not carried over, because it was a wrong default rather than a
+  considered choice.
+- Added an end-to-end test that measures the exported mesh itself, not just the
+  height table, and asserts the darkest band is the tallest.
+
+---
+
 ## [1.2.0] — 2026-08-17
 
 ### Added — ready-made images (second order path)

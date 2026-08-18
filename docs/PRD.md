@@ -108,9 +108,9 @@ Sign-in accepts either the mobile number or the email.
 | ID | Requirement |
 |---|---|
 | T1 | An admin can generate and download an STL file from any order |
-| T2 | One terrace per colour: layer 1 at height x, layer 2 at 2x, layer 3 at 3x, and so on |
+| T2 | One terrace per colour, at consecutive multiples of the base height x |
 | T3 | The value of x ("layer height") is editable in the admin panel |
-| T4 | The height direction can be inverted (darkest layer becomes the tallest) |
+| T4 | The darkest colour is the tallest by default; the direction can be flipped |
 | T5 | The plate's footprint equals the ordered frame size |
 | T6 | The model resolution is configurable (detail vs. file size) |
 | T7 | The output must be a closed, manifold, printable solid |

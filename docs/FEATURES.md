@@ -160,10 +160,12 @@ layer 3 → 3x mm
 
 `x` is the "layer height" setting in the site settings (default 2 mm).
 
-With the defaults, layer 1 is the **darkest** colour, so dark areas end up
-shortest and light areas tallest. If you want the opposite, enable
-**"وارونه کردن ارتفاع لایه‌ها"** ("invert layer heights") so the darkest layer
-becomes the tallest.
+The palette is ordered darkest first, and by default the **darkest colour gets
+the tallest step** — dark areas are the deep ones on a layered frame. So with a
+4-layer palette at 2 mm: darkest 8 mm, then 6, 4, and the lightest 2 mm.
+
+Untick **"تیره‌ترین لایه بلندترین باشد"** ("the darkest layer is the tallest")
+in the site settings to run it the other way round.
 
 ### Dimensions
 - The plate's width and length match the ordered frame size exactly (cm → mm)

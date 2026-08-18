@@ -657,22 +657,61 @@ class StlExportTests(StudioTestCase):
         )
         self.order = Order.objects.get()
 
-    def test_layer_heights_are_multiples_of_the_configured_unit(self):
+    def test_the_darkest_layer_is_the_tallest_by_default(self):
+        """Dark areas are the deep ones on a layered frame."""
         site = SiteSettings.load()
         site.stl_layer_height_mm = Decimal("2.50")
         site.save()
 
-        self.assertEqual(site.layer_heights_mm(4), [2.5, 5.0, 7.5, 10.0])
-        self.assertEqual(site.layer_heights_mm(3), [2.5, 5.0, 7.5])
+        # Palette order is darkest first, so the first entry gets the full stack.
+        self.assertTrue(site.stl_dark_is_tallest)
+        self.assertEqual(site.layer_heights_mm(4), [10.0, 7.5, 5.0, 2.5])
+        self.assertEqual(site.layer_heights_mm(3), [7.5, 5.0, 2.5])
 
-    def test_height_direction_can_be_inverted(self):
+    def test_height_direction_can_be_flipped(self):
         site = SiteSettings.load()
         site.stl_layer_height_mm = Decimal("2.00")
-        site.stl_invert_heights = True
+        site.stl_dark_is_tallest = False
         site.save()
 
-        # Darkest layer (index 0) becomes the tallest.
-        self.assertEqual(site.layer_heights_mm(4), [8.0, 6.0, 4.0, 2.0])
+        self.assertEqual(site.layer_heights_mm(4), [2.0, 4.0, 6.0, 8.0])
+
+    def test_exported_geometry_puts_the_dark_colour_on_top(self):
+        """
+        End-to-end check on the mesh itself, not just the height table:
+        the region painted with the darkest colour must be the tallest.
+        """
+        from .stl import order_to_stl
+
+        site = SiteSettings.load()
+        site.stl_layer_height_mm = Decimal("2.00")
+        site.save()
+
+        colors = ["#101010", "#606060", "#b0b0b0", "#f0f0f0"]  # darkest first
+        rgb = [tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in colors]
+        array = np.zeros((40, 80, 3), dtype=np.uint8)
+        for index, colour in enumerate(rgb):
+            array[:, index * 20:(index + 1) * 20] = colour
+        image = Image.fromarray(array, "RGB")
+
+        heights = site.layer_heights_mm(4)
+        payload, _ = order_to_stl(image, colors, heights, 80.0, 40.0, max_resolution=80)
+
+        count = struct.unpack("<I", payload[80:84])[0]
+        dtype = np.dtype([("n", "<3f4"), ("v", "<3,3f4"), ("a", "<u2")])
+        verts = np.frombuffer(payload[84:], dtype=dtype, count=count)["v"].astype(np.float64)
+
+        # Tallest z strictly inside each colour band. The margin matters: the
+        # wall between two bands lies exactly on their shared x plane, so it
+        # belongs to both and would report the taller neighbour's height.
+        peaks = []
+        for index in range(4):
+            x_low, x_high = index * 20.0 + 1.0, (index + 1) * 20.0 - 1.0
+            inside = (verts[:, :, 0] >= x_low).all(axis=1) & (verts[:, :, 0] <= x_high).all(axis=1)
+            peaks.append(round(float(verts[inside][:, :, 2].max()), 3))
+
+        self.assertEqual(peaks, [8.0, 6.0, 4.0, 2.0], f"band peaks were {peaks}")
+        self.assertGreater(peaks[0], peaks[-1], "the darkest band must be the tallest")
 
     def test_admin_can_download_an_stl(self):
         self.client.force_login(self.admin)
@@ -707,7 +746,8 @@ class StlExportTests(StudioTestCase):
         self.client.force_login(self.admin)
         response = self.client.get(f"/orders/{self.order.pk}/stl/")
 
-        # Order is 40 x 30 cm -> 400 x 300 mm; 4 layers x 3 mm -> 12 mm tallest.
+        # Order is 40 x 30 cm -> 400 x 300 mm; 4 layers x 3 mm -> 12 mm tallest
+        # (the tallest step is the same whichever end of the palette gets it).
         self.assertEqual(response["X-Model-Size-Mm"], "400.0x300.0x12.0")
 
     def test_every_column_is_solid_from_the_base_to_its_top(self):

@@ -180,12 +180,18 @@ class SiteSettings(models.Model):
         decimal_places=2,
         default=Decimal("2.00"),
         validators=[MinValueValidator(Decimal("0.05"))],
-        help_text="لایهٔ ۱ به این اندازه، لایهٔ ۲ دو برابر، لایهٔ ۳ سه برابر و … ارتفاع می‌گیرد.",
+        help_text=(
+            "ارتفاع پایه. هر لایه مضربی از این عدد است؛ با ۴ لایه و ۲ میلی‌متر، "
+            "ارتفاع‌ها ۸، ۶، ۴ و ۲ میلی‌متر می‌شود (از تیره به روشن)."
+        ),
     )
-    stl_invert_heights = models.BooleanField(
-        "وارونه کردن ارتفاع لایه‌ها",
-        default=False,
-        help_text="به‌طور پیش‌فرض روشن‌ترین لایه بلندترین است. با فعال کردن این گزینه، تیره‌ترین لایه بلندترین می‌شود.",
+    stl_dark_is_tallest = models.BooleanField(
+        "تیره‌ترین لایه بلندترین باشد",
+        default=True,
+        help_text=(
+            "روشن باشد: نواحی تیره بیشترین ارتفاع و نواحی روشن کمترین ارتفاع را دارند "
+            "(حالت متداول برای قاب‌های لایه‌ای). خاموش باشد: برعکس."
+        ),
     )
     stl_max_resolution = models.PositiveIntegerField(
         "حداکثر دقت مدل سه‌بعدی (پیکسل)",
@@ -296,16 +302,19 @@ class SiteSettings(models.Model):
 
     def layer_heights_mm(self, num_layers: int) -> list:
         """
-        Height of every layer, in millimetres.
+        Height of every layer, in millimetres, ordered darkest colour first.
 
-        Layer 1 gets one unit, layer 2 two units, layer 3 three units, and so
-        on. `stl_invert_heights` flips which end of the palette is tallest.
+        Heights are consecutive multiples of the base unit: one layer gets one
+        unit, the next two units, and so on. `stl_dark_is_tallest` decides
+        which end of the palette receives the tallest step — by default the
+        darkest, which is how a layered frame is normally built up.
         """
         unit = float(self.stl_layer_height_mm)
-        heights = [(index + 1) * unit for index in range(num_layers)]
-        if self.stl_invert_heights:
-            heights.reverse()
-        return heights
+
+        if self.stl_dark_is_tallest:
+            # index 0 is the darkest colour, so it gets the full stack.
+            return [(num_layers - index) * unit for index in range(num_layers)]
+        return [(index + 1) * unit for index in range(num_layers)]
 
     def as_dict(self, ratio=None) -> dict:
         data = {
