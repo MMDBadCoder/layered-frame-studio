@@ -1335,7 +1335,10 @@ a {
   max-width: none;
   aspect-ratio: auto;
   min-height: 360px;
-  display: flex;
+  /* Grid, not flex: a lone flex item is sized to its content, so in RTL the
+     text hugged the right edge instead of centring. A grid item stretches to
+     fill both axes, which is what the centring inside relies on. */
+  display: grid;
 }
 
 .ai-guide {

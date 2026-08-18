@@ -1,8 +1,8 @@
 from django.contrib import admin
 from django.urls import include, path
 
-admin.site.site_header = "پنل مدیریت قاب عکس دوبعدی"
-admin.site.site_title = "قاب عکس دوبعدی"
+admin.site.site_header = "پنل مدیریت قاب عکس سه‌بعدی"
+admin.site.site_title = "قاب عکس سه‌بعدی"
 admin.site.index_title = "مدیریت سفارش‌ها و پروفایل‌های رنگی"
 
 urlpatterns = [

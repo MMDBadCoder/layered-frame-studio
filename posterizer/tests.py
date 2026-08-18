@@ -751,7 +751,7 @@ class PageTitleTests(StudioTestCase):
     def test_titles_are_short_enough_for_a_browser_tab(self):
         html = self.client.get("/").content.decode()
         title = html.split("<title>")[1].split("</title>")[0]
-        self.assertEqual(title, "قاب عکس دوبعدی")
+        self.assertEqual(title, "قاب عکس سه‌بعدی")
         self.assertLess(len(title), 25)
 
 
@@ -1023,6 +1023,19 @@ class ReadyImageTests(StudioTestCase):
         self.assertIn('id="segmentedThumb"', html)
         self.assertEqual(html.count('id="aiPrompt"'), 1)
         self.assertIn('class="ai-guide"', html)
+
+    def test_the_shipped_prompt_is_the_real_one(self):
+        """Guards against the placeholder creeping back in."""
+        from .prompts import DEFAULT_AI_PROMPT
+
+        site = SiteSettings.load()
+        self.assertEqual(site.ai_helper_prompt, DEFAULT_AI_PROMPT)
+        self.assertIn("Extreme posterization", DEFAULT_AI_PROMPT)
+        self.assertIn("NO gradients", DEFAULT_AI_PROMPT)
+        self.assertNotIn("Convert this photo into a flat, poster-style", DEFAULT_AI_PROMPT)
+
+        # …and it reaches the page the customer reads.
+        self.assertContains(self.client.get("/"), "Extreme posterization")
 
     def test_ai_helper_can_be_hidden(self):
         site = SiteSettings.load()

@@ -7,6 +7,8 @@ from django.core.validators import MaxValueValidator, MinValueValidator, RegexVa
 from django.db import models
 from django.utils import timezone
 
+from .prompts import DEFAULT_AI_PROMPT
+
 HEX_COLOR_VALIDATOR = RegexValidator(
     r"^#(?:[0-9a-fA-F]{6})$",
     "رنگ باید به شکل کد هگز شش‌رقمی باشد. نمونه: #1a2b3c",
@@ -167,18 +169,7 @@ class SiteSettings(models.Model):
         "پرامپت پیشنهادی",
         blank=True,
         help_text="متنی که کاربر کپی می‌کند و همراه عکسش به مدل هوش مصنوعی می‌دهد.",
-        default=(
-            "Convert this photo into a flat, poster-style illustration made of "
-            "exactly 4 solid colors.\n\n"
-            "Strict rules:\n"
-            "- Use ONLY 4 distinct flat colors. No gradients, no shading, no "
-            "texture, no noise, no dithering.\n"
-            "- Every region must be one uniform color with hard, clean edges.\n"
-            "- Keep the subject clearly recognizable; simplify detail into the "
-            "4 tonal levels from darkest to lightest.\n"
-            "- Keep the original aspect ratio and framing.\n"
-            "- Output a single image, no text, no watermark, no border.\n"
-        ),
+        default=DEFAULT_AI_PROMPT,
     )
 
     # --- 3D export ----------------------------------------------------------
