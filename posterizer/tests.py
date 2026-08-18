@@ -710,6 +710,71 @@ class StlExportTests(StudioTestCase):
         # Order is 40 x 30 cm -> 400 x 300 mm; 4 layers x 3 mm -> 12 mm tallest.
         self.assertEqual(response["X-Model-Size-Mm"], "400.0x300.0x12.0")
 
+    def test_every_column_is_solid_from_the_base_to_its_top(self):
+        """
+        The plate must be a filled solid, not a stack of floating slabs.
+
+        Casts a vertical ray through every cell and checks the surface is
+        crossed exactly twice: entering at z=0 and leaving at that cell's
+        height. Any gap under a terrace would show up as extra crossings.
+        """
+        from .stl import order_to_stl
+
+        colors = ["#1a1a1a", "#6b4a24", "#b08750", "#f2e0c9"]
+        rgb = [tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in colors]
+
+        # Blobs over noise: islands, saddles and isolated cells all present.
+        rng = np.random.default_rng(4)
+        indices = rng.integers(0, 4, (32, 40))
+        rows_grid, cols_grid = np.mgrid[0:32, 0:40]
+        for radius, value in ((13, 0), (8, 3), (4, 1)):
+            indices[(cols_grid - 20) ** 2 // 2 + (rows_grid - 16) ** 2 < radius ** 2] = value
+        image = Image.fromarray(np.array(rgb, "uint8")[indices], "RGB")
+
+        heights = [2.0, 4.0, 6.0, 8.0]
+        width_mm, height_mm = 40.0, 32.0
+        payload, _ = order_to_stl(image, colors, heights, width_mm, height_mm, max_resolution=40)
+
+        count = struct.unpack("<I", payload[80:84])[0]
+        dtype = np.dtype([("n", "<3f4"), ("v", "<3,3f4"), ("a", "<u2")])
+        verts = np.frombuffer(payload[84:], dtype=dtype, count=count)["v"].astype(np.float64)
+
+        first, second, third = verts[:, 0, :], verts[:, 1, :], verts[:, 2, :]
+        edge_a = second[:, :2] - first[:, :2]
+        edge_b = third[:, :2] - first[:, :2]
+        det = edge_a[:, 0] * edge_b[:, 1] - edge_b[:, 0] * edge_a[:, 1]
+        usable = np.abs(det) > 1e-12
+        safe_det = np.where(usable, det, 1.0)
+
+        def crossings(px, py):
+            rel = np.array([px, py]) - first[:, :2]
+            u = (rel[:, 0] * edge_b[:, 1] - edge_b[:, 0] * rel[:, 1]) / safe_det
+            w = (edge_a[:, 0] * rel[:, 1] - rel[:, 0] * edge_a[:, 1]) / safe_det
+            inside = usable & (u > 1e-9) & (w > 1e-9) & (u + w < 1 - 1e-9)
+            z = (
+                first[inside, 2]
+                + u[inside] * (second[inside, 2] - first[inside, 2])
+                + w[inside] * (third[inside, 2] - first[inside, 2])
+            )
+            return np.sort(z)
+
+        repaired, _ = resolve_saddles(layer_index_map(image, colors, 40))
+        heightmap = np.array(heights)[repaired]
+        rows, cols = heightmap.shape
+        dx, dy = width_mm / cols, height_mm / rows
+
+        # Probe off-centre and asymmetrically: the cell centre and the 45°
+        # diagonal both lie on the split between the cell's two triangles.
+        gaps = []
+        for row in range(rows):
+            for col in range(cols):
+                z = crossings((col + 0.3) * dx, height_mm - (row + 0.6) * dy)
+                expected = heightmap[row, col]
+                if len(z) != 2 or abs(z[0]) > 1e-6 or abs(z[1] - expected) > 1e-6:
+                    gaps.append((row, col, np.round(z, 3).tolist(), float(expected)))
+
+        self.assertEqual(gaps[:5], [], f"{len(gaps)} column(s) are not solid to the base")
+
     def test_saddle_repair_keeps_the_picture_recognisable(self):
         """Repairs must be rare on a real posterized image, not wholesale."""
         with Image.open(self.order.result_image.path) as image:
