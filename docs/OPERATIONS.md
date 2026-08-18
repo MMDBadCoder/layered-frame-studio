@@ -207,6 +207,31 @@ is needed.
 
 ---
 
+## 7.7 Replacing the logo
+
+```bash
+.venv/bin/python scripts/make_logo.py path/to/new-logo.png
+.venv/bin/python manage.py collectstatic --noinput
+systemctl restart photo-frame-2d
+```
+
+The script writes every brand asset from one source image: the inline SVG the
+header uses, an SVG favicon, a 512px transparent master and the 16/32/180px
+icon set. It handles what logo files usually arrive as — a JPEG with a white
+background, wide margins and compression ringing:
+
+- The alpha is *unmixed* rather than colour-keyed, so edges stay smooth and the
+  ringing fades out instead of leaving a halo.
+- If the mark is made of axis-aligned rectangles it is re-emitted as exact
+  vector geometry, which is sharper than resampling the original could be.
+  Marks with curves keep the existing SVG and get raster assets only.
+- Colours are snapped to the site accent, so the header matches its own token.
+
+Pass `--accent` or `--background` if either differs from the defaults
+(`#6c8cff` on `#ffffff`).
+
+---
+
 ## 8. Troubleshooting
 
 | Symptom | Check |

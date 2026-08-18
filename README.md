@@ -71,6 +71,7 @@ project root itself.
 | `scripts/create-admin.sh` | Create a superuser, or promote an existing user |
 | `scripts/backup.sh` | Pack the entire runtime state into one zip file |
 | `scripts/restore.sh` | Restore the runtime state from a backup file |
+| `scripts/make_logo.py` | Rebuild the brand mark and favicons from one image |
 
 ```bash
 sudo ./scripts/install.sh --port 9000        # install on a different port
