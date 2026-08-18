@@ -1,0 +1,23 @@
+{% extends "admin/base.html" %}
+{% load static i18n %}
+
+{% comment %}
+Overrides Django's own admin/base_site.html to put the brand mark beside the
+title. It extends admin/base.html, exactly as Django's version does — extending
+"admin/base_site.html" here would find this very file and recurse.
+Everything else is left to Django, which already handles Persian and RTL.
+{% endcomment %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+<div id="site-name" style="display:flex;align-items:center;gap:10px">
+  <img src="{% static 'img/icon-32.png' %}" alt="" width="26" height="26" style="display:block;flex-shrink:0">
+  <a href="{% url 'admin:index' %}">{{ site_header|default:_('Django administration') }}</a>
+</div>
+{% if user.is_anonymous %}
+  {% include "admin/color_theme_toggle.html" %}
+{% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

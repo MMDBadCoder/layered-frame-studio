@@ -852,6 +852,24 @@ class StlExportTests(StudioTestCase):
         self.assertContains(detail, "دانلود فایل STL")
 
 
+class BrandingTests(StudioTestCase):
+    def test_pages_carry_the_logo_and_a_favicon_set(self):
+        html = self.client.get("/").content.decode()
+
+        # Inlined, not an <img>: the mark uses fill="currentColor" so it follows
+        # the CSS accent colour. An <img> would render it black on the dark header.
+        self.assertIn('fill="currentColor"', html)
+        self.assertIn('<rect x="8.726"', html)
+
+        for asset in ("img/logo.svg", "img/icon-32.png", "img/icon-16.png", "img/icon-180.png"):
+            self.assertIn(asset, html, f"{asset} missing from the head")
+        self.assertIn('rel="apple-touch-icon"', html)
+
+    def test_the_orders_page_uses_the_same_mark(self):
+        self.client.force_login(self.make_user())
+        self.assertContains(self.client.get("/orders/"), '<rect x="8.726"')
+
+
 class PageTitleTests(StudioTestCase):
     def test_titles_are_short_enough_for_a_browser_tab(self):
         html = self.client.get("/").content.decode()
