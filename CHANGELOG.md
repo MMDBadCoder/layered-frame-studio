@@ -4,7 +4,64 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
-## [1.2.1] — 2026-08-18
+## [1.0.0] — 2026-08-18
+
+First stable release.
+
+A Persian, right-to-left studio that turns a photograph into a layered poster
+image, takes orders for a physical frame at a chosen size and price, and
+exports each order as a printable 3D plate.
+
+**What it does**
+- Two ways to reach an order: build the image in the studio with an
+  admin-defined colour palette, or upload one already made elsewhere, which is
+  verified to be built from solid colours before it is accepted.
+- Frame sizing that always follows the photo's aspect ratio, with an
+  approximate price shown live and a final price set by an admin after review.
+- Accounts keyed on a mobile number, sign-in in a modal so a rendered image is
+  never lost, and a cap of three unreviewed orders per customer.
+- STL export: one terrace per colour, darkest tallest, watertight and
+  manifold with outward-facing normals.
+- A fully Persian admin panel covering orders, palettes, prices, studio
+  defaults, ready-image rules and 3D parameters.
+
+**Operating it**
+- `scripts/install.sh` sets up a fresh Ubuntu server in one idempotent command
+  and runs it under systemd.
+- `scripts/backup.sh` and `scripts/restore.sh` move the entire state — database,
+  order images, live session renders and the secret key — as a single zip.
+
+**Guarantees covered by the test suite (78 tests)**
+- Layer count, frame height and price are always recomputed server-side; a
+  tampered browser cannot change what is built or what it costs.
+- The exported mesh is closed, consistently oriented, and solid from the base
+  to the top of every column.
+- Editing a palette or a price never alters an order already placed.
+
+---
+
+## [0.5.0] — 2026-08-18
+
+### Added
+- Brand mark and a full favicon set (SVG, 16/32/180px), wired into both pages
+  and the admin panel; the site previously had no favicon at all.
+- `scripts/make_logo.py` rebuilds every brand asset from a single source image:
+  unmixes the alpha instead of colour-keying it, re-emits rectangular marks as
+  exact vector geometry, and snaps colours to the site accent.
+
+### Changed
+- The Persian UI name is now «قاب عکس سه‌بعدی» — the product makes a 3D layered
+  frame, not a flat one.
+- The AI helper prompt shown beside the ready-image upload is admin-editable
+  and ships with the supplied wording.
+
+### Fixed
+- The ready-image upload box centred its contents correctly: a lone flex item
+  is sized to its content, which in RTL pushed the text against the right edge.
+
+---
+
+## [0.4.1] — 2026-08-18
 
 ### Fixed
 - **The 3D model was built upside down.** The darkest colour received the
@@ -21,7 +78,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
-## [1.2.0] — 2026-08-17
+## [0.4.0] — 2026-08-17
 
 ### Added — ready-made images (second order path)
 - `posterizer/ready.py`: verifies that a customer-supplied image really is built
@@ -48,7 +105,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
-## [1.1.0] — 2026-08-16 (1405-05-26)
+## [0.3.0] — 2026-08-16 (1405-05-26)
 
 ### Added — 3D model export (STL)
 - `posterizer/stl.py`: turns an order's layered image into a terraced 3D plate
@@ -78,7 +135,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
-## [1.0.0] — 2026-08-16 (1405-05-26)
+## [0.2.0] — 2026-08-16 (1405-05-26)
 
 First complete release: studio, user accounts, ordering, pricing and
 maintenance tooling.
@@ -146,10 +203,10 @@ maintenance tooling.
 
 ---
 
-## [0.2.0] — Django rewrite
+## [0.1.0] — Django rewrite
 
 - Complete migration from Flask to Django, preserving look and behaviour exactly
 - `main.py` kept as a standalone processing engine
 
-## [0.1.0] — Initial version
+## [0.0.1] — Initial version
 - Flask application with greyscale processing and a single-page interface

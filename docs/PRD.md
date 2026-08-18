@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD) — Photo Frame 2D
 
-> Version 1.2 — last updated 2026-08-16 (26 Mordad 1405)
+> For release v1.0.0 — last updated 2026-08-18 (27 Mordad 1405)
 
 ---
 

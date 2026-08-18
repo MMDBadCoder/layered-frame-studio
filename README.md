@@ -108,7 +108,7 @@ Anything that does not exist in a fresh clone and has to survive:
 | [`docs/FEATURES.md`](docs/FEATURES.md) | Every feature and its exact behaviour |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Code layout, data model, API, technical decisions |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Install, backup, restore, troubleshooting |
-| [`CHANGELOG.md`](CHANGELOG.md) | Release history |
+| [`CHANGELOG.md`](CHANGELOG.md) | Release history — current release **v1.0.0** |
 
 ---
 
