@@ -21,7 +21,8 @@ for admin review.
 2. **Size & price** — choose a frame width; the height follows the photo's aspect ratio automatically. An approximate price is shown live.
 3. **Order** — sign in (in a modal, so the render is never lost), confirm, submit.
 4. **Review** — admins triage orders in the Django admin panel and set the final price.
-5. **Produce** — admins export any order as a printable **3D STL plate**, one terrace per colour.
+5. **Or bring your own** — already have a layered image? Upload it, we verify it is built from solid colours, and it becomes an order directly.
+6. **Produce** — admins export any order as a printable **3D STL plate**, one terrace per colour.
 
 Admins also control what the studio looks like when it first opens: the default
 colour profile and every processing parameter, with no code changes.

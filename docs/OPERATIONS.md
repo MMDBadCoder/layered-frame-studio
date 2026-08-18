@@ -186,6 +186,27 @@ STL generation happens on the server, on demand; nothing is stored.
 
 ---
 
+## 7.6 Tuning ready-image acceptance
+
+Admin panel → shop settings → "پذیرش تصاویر آماده".
+
+| Setting | Effect |
+|---|---|
+| Accept ready images | Turns the whole second path off; the mode switch disappears |
+| Maximum colours | Images resolving to more layers than this are rejected |
+| Minimum coverage | Lower it to accept softer images; raise it to be stricter about gradients |
+| Minimum layer share | How much of the image a colour must cover to count as a layer |
+
+If genuine artwork is being rejected, lower the minimum coverage a little
+(98% is still safely clear of photographs). If noisy images are getting
+through, raise the minimum layer share.
+
+The AI prompt customers copy lives in the same settings page, under
+"راهنمای ساخت با هوش مصنوعی". Editing it takes effect immediately; no deploy
+is needed.
+
+---
+
 ## 8. Troubleshooting
 
 | Symptom | Check |

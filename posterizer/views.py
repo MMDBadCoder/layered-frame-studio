@@ -19,6 +19,7 @@ from main import DEFAULT_CONFIG, process_image_bytes
 
 from .jalali import format_cm, format_toman, to_persian_digits
 from .models import ColorProfile, Order, SiteSettings
+from .ready import prepare_ready_image, verify_ready_image
 from .stl import order_to_stl
 
 UPLOAD_DIR = settings.BASE_DIR / "uploads"
@@ -235,6 +236,88 @@ def to_ascii_number(value: str) -> str:
     return str(value).translate(table).strip()
 
 
+# ----------------------------------------------------------- ready images ----
+
+READY_SESSION_KEY = "ready_palette"
+
+
+def clear_ready_state(request) -> None:
+    """Forget any verified ready image (the visitor switched back to the studio)."""
+    request.session.pop(READY_SESSION_KEY, None)
+
+
+@require_POST
+def ready_verify(request):
+    """
+    Check an already-layered image and, if it passes, stage it as an order.
+
+    Nothing is processed here: the image is the customer's finished artwork.
+    We only confirm it is built from a small set of solid colours, then snap
+    away compression noise so the stored copy is exactly those colours.
+    """
+    site = SiteSettings.load()
+    if not site.ready_images_enabled:
+        return JsonResponse(
+            {"ok": False, "error": "پذیرش تصاویر آماده در حال حاضر غیرفعال است."}, status=400
+        )
+
+    upload = request.FILES.get("image")
+    if not upload or not upload.name:
+        return JsonResponse({"ok": False, "error": "هیچ تصویری انتخاب نشده است."}, status=400)
+
+    image_bytes = upload.read()
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        return JsonResponse(
+            {"ok": False, "error": "حجم تصویر بیش از حد مجاز است (حداکثر ۲۰ مگابایت)."},
+            status=400,
+        )
+
+    try:
+        Image.open(io.BytesIO(image_bytes)).verify()
+    except Exception:
+        return JsonResponse({"ok": False, "error": "فایل انتخاب‌شده یک تصویر معتبر نیست."}, status=400)
+
+    try:
+        report = verify_ready_image(image_bytes, **site.ready_image_rules())
+    except Exception as exc:
+        return JsonResponse({"ok": False, "error": f"بررسی تصویر ناموفق بود: {exc}"}, status=500)
+
+    if not report["ok"]:
+        clear_ready_state(request)
+        return JsonResponse({
+            "ok": False,
+            "error": report["message"],
+            "reason": report["reason"],
+            "color_count": report["color_count"],
+            "coverage": report["coverage"],
+            "max_colors": site.ready_max_colors,
+        }, status=400)
+
+    # Store the artwork itself, plus a copy flattened onto the detected palette.
+    session_id = uuid.uuid4().hex
+    request.session["image_id"] = session_id
+    store_original(session_id, image_bytes)
+
+    snapped = prepare_ready_image(image_bytes, report["rgb"])
+    store_result(session_id, snapped)
+
+    request.session[READY_SESSION_KEY] = report["colors"]
+    request.session["last_render"] = _config_fingerprint({"source": "ready"}, None)
+
+    return JsonResponse({
+        "ok": True,
+        "message": report["message"],
+        "colors": report["colors"],
+        "shares": report["shares"],
+        "color_count": report["color_count"],
+        "coverage": report["coverage"],
+        "result_url": bytes_to_display_data_url(snapped),
+        "original_url": bytes_to_display_data_url(image_bytes),
+        "sizing": sizing_payload(image_bytes),
+        "session_id": session_id,
+    })
+
+
 # ----------------------------------------------------------------- pages ----
 
 @ensure_csrf_cookie
@@ -253,6 +336,9 @@ def index(request):
         "selected_profile_id": selected.id if selected else None,
         "sizing": sizing_payload(),
         "superpixels_available": SUPERPIXELS_AVAILABLE,
+        "ready_enabled": site.ready_images_enabled,
+        "ready_max_colors": site.ready_max_colors,
+        "ai_helper": site.ai_helper(),
         "max_unreviewed": Order.MAX_UNREVIEWED,
         "open_login": request.GET.get("login") == "1",
         "account": user_payload(request.user)
@@ -382,6 +468,10 @@ def get_config(request):
         "default_profile_id": selected.id if selected else None,
         "sizing": sizing_payload(),
         "superpixels_available": SUPERPIXELS_AVAILABLE,
+        "ready_images": {
+            "enabled": site.ready_images_enabled,
+            "max_colors": site.ready_max_colors,
+        },
     })
 
 
@@ -429,6 +519,7 @@ def process(request):
         # Keep the exact render around so submitting an order does not have to
         # redo the work (and cannot drift from what the user just saw).
         store_result(session_id, result_bytes)
+        clear_ready_state(request)
         request.session["last_render"] = _config_fingerprint(config, profile.id)
 
         return JsonResponse({
@@ -464,11 +555,19 @@ def order_create(request):
             status=401,
         )
 
-    profile = resolve_profile(request.POST)
-    if profile is None:
-        return JsonResponse(
-            {"ok": False, "error": "پروفایل رنگی انتخاب‌شده معتبر نیست."}, status=400
-        )
+    # Two ways to reach an order: built in the studio, or a verified ready image.
+    is_ready = (
+        request.POST.get("source") == Order.SOURCE_READY
+        and request.session.get(READY_SESSION_KEY)
+    )
+
+    profile = None
+    if not is_ready:
+        profile = resolve_profile(request.POST)
+        if profile is None:
+            return JsonResponse(
+                {"ok": False, "error": "پروفایل رنگی انتخاب‌شده معتبر نیست."}, status=400
+            )
 
     session_id = request.session.get("image_id")
     original_bytes = load_original(session_id) if session_id else None
@@ -478,7 +577,13 @@ def order_create(request):
             status=400,
         )
 
-    config = parse_config(request.POST, profile)
+    if is_ready:
+        ready_colors = list(request.session[READY_SESSION_KEY])
+        config = {"source": Order.SOURCE_READY, "num_levels": len(ready_colors)}
+    else:
+        ready_colors = None
+        config = parse_config(request.POST, profile)
+
     note = (request.POST.get("note") or "").strip()[:2000]
 
     # The frame size is re-validated and the height re-derived from the photo's
@@ -508,22 +613,35 @@ def order_create(request):
                     status=400,
                 )
 
-            # Reuse the render the visitor is looking at; only redo the work if
-            # the settings changed since the last preview.
-            result_bytes = None
-            if request.session.get("last_render") == _config_fingerprint(config, profile.id):
+            if is_ready:
+                # The customer's own artwork, flattened onto its detected
+                # palette when it was verified. Never re-processed.
                 result_bytes = load_result(session_id)
-            if result_bytes is None:
-                result_bytes = process_image_bytes(
-                    original_bytes, colors=profile.color_list(), **config
-                )
+                if result_bytes is None:
+                    return JsonResponse(
+                        {"ok": False, "error": "تصویر تأییدشده یافت نشد. لطفاً دوباره بارگذاری کنید."},
+                        status=400,
+                    )
+                order_colors = ready_colors
+            else:
+                # Reuse the render the visitor is looking at; only redo the work
+                # if the settings changed since the last preview.
+                order_colors = profile.color_list()
+                result_bytes = None
+                if request.session.get("last_render") == _config_fingerprint(config, profile.id):
+                    result_bytes = load_result(session_id)
+                if result_bytes is None:
+                    result_bytes = process_image_bytes(
+                        original_bytes, colors=order_colors, **config
+                    )
 
             order = Order(
                 user=request.user,
+                source=Order.SOURCE_READY if is_ready else Order.SOURCE_STUDIO,
                 profile=profile,
-                profile_name=profile.name,
-                num_layers=profile.num_layers,
-                colors=profile.color_list(),
+                profile_name="" if is_ready else profile.name,
+                num_layers=len(order_colors),
+                colors=order_colors,
                 config=config,
                 note=note,
                 status=Order.STATUS_PENDING,
@@ -548,7 +666,8 @@ def order_create(request):
             "id": order.pk,
             "status": order.status,
             "status_label": order.get_status_display(),
-            "profile": order.profile_name,
+            "profile": order.palette_label,
+            "source": order.source,
             "num_layers": order.num_layers,
             "size": order.size_label,
             "estimated_cost": order.estimated_cost,

@@ -126,6 +126,61 @@ class SiteSettings(models.Model):
         "اندازه ناحیه سوپرپیکسل", default=25, validators=[MinValueValidator(5), MaxValueValidator(100)]
     )
 
+    # --- ready-made images --------------------------------------------------
+
+    ready_images_enabled = models.BooleanField(
+        "پذیرش تصاویر آماده",
+        default=True,
+        help_text="اگر خاموش شود، کاربران فقط می‌توانند با ابزار خود سایت تصویر بسازند.",
+    )
+    ready_max_colors = models.PositiveSmallIntegerField(
+        "حداکثر تعداد رنگ مجاز",
+        default=MAX_LAYERS,
+        validators=[MinValueValidator(MIN_LAYERS), MaxValueValidator(MAX_LAYERS)],
+        help_text="تصویر آماده‌ای که بیش از این تعداد لایه داشته باشد پذیرفته نمی‌شود.",
+    )
+    ready_min_coverage = models.DecimalField(
+        "حداقل پوشش رنگ‌های اصلی (درصد)",
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("99.00"),
+        validators=[MinValueValidator(Decimal("50.00")), MaxValueValidator(Decimal("100.00"))],
+        help_text="اگر رنگ‌های اصلی کمتر از این مقدار از تصویر را بپوشانند، تصویر طیف‌دار است و رد می‌شود.",
+    )
+    ready_min_layer_share = models.DecimalField(
+        "حداقل سهم هر لایه (درصد)",
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("1.00"),
+        validators=[MinValueValidator(Decimal("0.01")), MaxValueValidator(Decimal("20.00"))],
+        help_text="رنگ‌هایی که کمتر از این مقدار از تصویر را بگیرند، لایهٔ مستقل به حساب نمی‌آیند.",
+    )
+
+    # --- AI helper shown next to the ready-image upload ---------------------
+
+    ai_helper_enabled = models.BooleanField("نمایش راهنمای ساخت با هوش مصنوعی", default=True)
+    ai_helper_model_name = models.CharField(
+        "نام مدل پیشنهادی", max_length=100, default="Nano Banana Pro", blank=True
+    )
+    ai_helper_url = models.URLField("لینک مدل", blank=True)
+    ai_helper_prompt = models.TextField(
+        "پرامپت پیشنهادی",
+        blank=True,
+        help_text="متنی که کاربر کپی می‌کند و همراه عکسش به مدل هوش مصنوعی می‌دهد.",
+        default=(
+            "Convert this photo into a flat, poster-style illustration made of "
+            "exactly 4 solid colors.\n\n"
+            "Strict rules:\n"
+            "- Use ONLY 4 distinct flat colors. No gradients, no shading, no "
+            "texture, no noise, no dithering.\n"
+            "- Every region must be one uniform color with hard, clean edges.\n"
+            "- Keep the subject clearly recognizable; simplify detail into the "
+            "4 tonal levels from darkest to lightest.\n"
+            "- Keep the original aspect ratio and framing.\n"
+            "- Output a single image, no text, no watermark, no border.\n"
+        ),
+    )
+
     # --- 3D export ----------------------------------------------------------
 
     stl_layer_height_mm = models.DecimalField(
@@ -229,6 +284,23 @@ class SiteSettings(models.Model):
             "use_superpixels": self.default_use_superpixels,
             "superpixel_region_size": self.default_superpixel_region_size,
             "majority_window_size": self.default_majority_window_size,
+        }
+
+    def ready_image_rules(self) -> dict:
+        """Thresholds handed to posterizer.ready.verify_ready_image()."""
+        return {
+            "max_colors": self.ready_max_colors,
+            "min_coverage": float(self.ready_min_coverage),
+            "min_layer_share": float(self.ready_min_layer_share) / 100.0,
+        }
+
+    def ai_helper(self) -> dict:
+        """The 'make it with AI' card shown beside the ready-image upload."""
+        return {
+            "enabled": self.ai_helper_enabled and bool(self.ai_helper_prompt.strip()),
+            "model_name": self.ai_helper_model_name,
+            "url": self.ai_helper_url,
+            "prompt": self.ai_helper_prompt,
         }
 
     def layer_heights_mm(self, num_layers: int) -> list:
@@ -416,6 +488,14 @@ class Order(models.Model):
     UNREVIEWED_STATUSES = (STATUS_PENDING, STATUS_REVIEWING)
     MAX_UNREVIEWED = 3
 
+    # How the layered image came to exist.
+    SOURCE_STUDIO = "studio"
+    SOURCE_READY = "ready"
+    SOURCE_CHOICES = [
+        (SOURCE_STUDIO, "ساخته‌شده با ابزار سایت"),
+        (SOURCE_READY, "تصویر آمادهٔ کاربر"),
+    ]
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -433,6 +513,13 @@ class Order(models.Model):
 
     # Snapshots, so an order keeps showing what was actually ordered even if the
     # admin later edits or deletes the profile.
+    source = models.CharField(
+        "منبع تصویر",
+        max_length=10,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_STUDIO,
+        db_index=True,
+    )
     profile_name = models.CharField("نام پروفایل (ثبت‌شده)", max_length=100, blank=True)
     num_layers = models.PositiveSmallIntegerField("تعداد لایه‌ها", default=0)
     colors = models.JSONField("رنگ لایه‌ها", default=list, blank=True)
@@ -510,6 +597,17 @@ class Order(models.Model):
     @property
     def cost_is_final(self) -> bool:
         return self.final_cost is not None
+
+    @property
+    def is_ready_image(self) -> bool:
+        return self.source == self.SOURCE_READY
+
+    @property
+    def palette_label(self) -> str:
+        """What to show where a profile name would normally go."""
+        if self.is_ready_image:
+            return "پالت تصویر آماده"
+        return self.profile_name or "—"
 
     @property
     def size_label(self) -> str:

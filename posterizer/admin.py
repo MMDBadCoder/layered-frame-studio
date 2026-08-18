@@ -2,6 +2,7 @@ from django import forms
 from django.contrib import admin, messages
 from django.urls import reverse
 from django.utils.html import format_html, format_html_join
+from django.utils.safestring import mark_safe
 
 from .jalali import format_cm, format_jalali, format_toman
 from .models import ColorProfile, Order, ProfileLayer, SiteSettings
@@ -45,6 +46,30 @@ class SiteSettingsAdmin(admin.ModelAdmin):
                 "description": (
                     "این مقادیر همان چیزی است که کاربر هنگام باز کردن صفحهٔ اصلی می‌بیند. "
                     "کاربر می‌تواند آن‌ها را تغییر دهد؛ این‌ها فقط نقطهٔ شروع هستند."
+                ),
+            },
+        ),
+        (
+            "پذیرش تصاویر آماده",
+            {
+                "fields": (
+                    "ready_images_enabled",
+                    ("ready_max_colors", "ready_min_coverage", "ready_min_layer_share"),
+                ),
+                "description": (
+                    "کاربر می‌تواند تصویر لایه‌ای که خودش با ابزار دیگری ساخته را مستقیم "
+                    "بارگذاری کند. تصویر باید از رنگ‌های یکدست ساخته شده باشد؛ این مقادیر "
+                    "سخت‌گیری آن بررسی را تعیین می‌کنند."
+                ),
+            },
+        ),
+        (
+            "راهنمای ساخت با هوش مصنوعی",
+            {
+                "fields": ("ai_helper_enabled", "ai_helper_model_name", "ai_helper_url", "ai_helper_prompt"),
+                "description": (
+                    "متن پرامپت کنار بخش «تصویر آماده» نمایش داده می‌شود و کاربر می‌تواند "
+                    "آن را کپی کند."
                 ),
             },
         ),
@@ -127,7 +152,7 @@ class SiteSettingsAdmin(admin.ModelAdmin):
 def _swatches(colors, size: int = 20) -> str:
     """A row of colour chips, used all over the admin."""
     if not colors:
-        return format_html('<span style="color:#999">—</span>')
+        return mark_safe('<span style="color:#999">&mdash;</span>')
     return format_html(
         '<span style="display:inline-flex;gap:3px;vertical-align:middle">{}</span>',
         format_html_join(
@@ -205,7 +230,8 @@ class OrderAdmin(admin.ModelAdmin):
         "id",
         "thumbnail",
         "customer",
-        "profile_name",
+        "source_badge",
+        "palette_name",
         "layers",
         "frame_size",
         "cost_column",
@@ -215,7 +241,7 @@ class OrderAdmin(admin.ModelAdmin):
     )
     list_display_links = ("id", "thumbnail")
     list_editable = ("status",)
-    list_filter = ("status", "profile", "created_at")
+    list_filter = ("status", "source", "profile", "created_at")
     search_fields = (
         "id",
         "user__phone",
@@ -232,6 +258,7 @@ class OrderAdmin(admin.ModelAdmin):
         "customer",
         "contact",
         "profile_name",
+        "source_badge",
         "num_layers",
         "palette",
         "result_preview",
@@ -268,7 +295,7 @@ class OrderAdmin(admin.ModelAdmin):
         ),
         (
             "مشخصات ساخت",
-            {"fields": ("profile_name", "num_layers", "palette", "settings_table")},
+            {"fields": ("source_badge", "profile_name", "num_layers", "palette", "settings_table")},
         ),
         (
             "مدل سه‌بعدی",
@@ -319,6 +346,17 @@ class OrderAdmin(admin.ModelAdmin):
     @admin.display(description="راه ارتباطی")
     def contact(self, obj):
         return format_html("{}<br><span dir=\"ltr\">{}</span>", obj.user.phone, obj.user.email)
+
+    @admin.display(description="منبع", ordering="source")
+    def source_badge(self, obj):
+        colour, label = (
+            ("#8c6cff", "تصویر آماده") if obj.is_ready_image else ("#6c8cff", "ساخت با ابزار")
+        )
+        return format_html('<span style="color:{};font-weight:600">{}</span>', colour, label)
+
+    @admin.display(description="پروفایل", ordering="profile_name")
+    def palette_name(self, obj):
+        return obj.palette_label
 
     @admin.display(description="لایه‌ها", ordering="num_layers")
     def layers(self, obj):

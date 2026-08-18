@@ -37,6 +37,7 @@ posterizer/          Studio, profiles, orders
   views.py           Pages + processing/order APIs + STL download
   admin.py           Persian admin panel
   stl.py             3D model generation from the layered image
+  ready.py           verification of customer-supplied layered images
   jalali.py          Jalali dates, Persian digits, Toman formatting
   templatetags/      jalali, toman, cm and fa_digits filters
   management/commands/cleanup_uploads.py
@@ -63,7 +64,10 @@ SiteSettings (singleton, pk=1)
  ├─ studio defaults: default_profile, default_preprocess_method,
  │    default_*_kernel_size, default_postprocess_method, default_min_region_size,
  │    default_preserve_edges, default_use_superpixels, …
- └─ 3D: stl_layer_height_mm, stl_invert_heights, stl_max_resolution
+ ├─ 3D: stl_layer_height_mm, stl_invert_heights, stl_max_resolution
+ ├─ ready images: ready_images_enabled, ready_max_colors, ready_min_coverage,
+ │    ready_min_layer_share
+ └─ AI helper: ai_helper_enabled, ai_helper_model_name, ai_helper_url, ai_helper_prompt
 
 ColorProfile
  ├─ name, description, num_layers, is_active, sort_order
@@ -72,6 +76,7 @@ ColorProfile
 Order
  ├─ user → User
  ├─ profile → ColorProfile (SET_NULL)
+ ├─ source: studio | ready
  ├─ snapshot: profile_name, num_layers, colors, config
  ├─ size: width_cm, height_cm, area_cm2
  ├─ price: price_per_cm2, estimated_cost, final_cost
@@ -97,6 +102,7 @@ onto the order itself.
 | `/orders/<id>/stl/` | GET | 3D model download (admin only) |
 | `/api/config` | GET | Defaults, profiles, size range |
 | `/api/process` | POST | Process an image → data URL + size range |
+| `/api/ready/verify` | POST | Verify a ready-made image and stage it for ordering |
 | `/api/orders/create` | POST | Place an order |
 | `/api/auth/status` | GET | Sign-in status |
 | `/api/auth/login` | POST | Sign in |
@@ -175,6 +181,29 @@ exactly what the user saw.
 
 ---
 
+## 5.6 Ready-image verification (`posterizer/ready.py`)
+
+```
+uploaded image
+   ↓ downscale (nearest neighbour, max 700 px)
+   ↓ greedy clustering around the most frequent colours (tolerance 18)
+   ↓ merge clusters below the layer-share threshold into the nearest layer
+   ↓ judge: layer count ≤ limit, coverage ≥ threshold, at least 2 layers
+   ↓ (on success) snap the full-resolution image onto the detected palette
+verified artwork + palette
+```
+
+The merge step runs **before** the layer count is judged. Judging raw clusters
+would reject a clean four-colour design purely for having anti-aliased or
+JPEG-compressed edges, which produce a long tail of tiny clusters along every
+boundary.
+
+Squared colour distances are computed in `int32`. In `int16` a squared channel
+difference (up to 65025) wraps negative, and the nearest-colour search then
+returns an arbitrary layer — the same bug previously affected the STL exporter.
+
+---
+
 ## 6. Key technical decisions
 
 | Decision | Why |
@@ -225,6 +254,7 @@ exactly what the user saw.
 | `RenderDefaultsTests` | Configurable defaults and user-choice precedence |
 | `StlExportTests` | Layer heights, dimensions, **watertightness**, access control |
 | `ColorProfileTests` | Layer syncing, inactive profiles |
+| `ReadyImageTests` | Palette detection, rejection, ordering, STL, UI |
 | `PageTitleTests` | Page title length |
 | `AdminPanelTests` | Access, status changes, bulk actions |
 

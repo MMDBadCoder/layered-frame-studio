@@ -44,8 +44,10 @@ def layer_index_map(image: Image.Image, colors, max_resolution: int) -> np.ndarr
         new_size = (max(1, round(width * scale)), max(1, round(height * scale)))
         image = image.resize(new_size, Image.NEAREST)
 
-    pixels = np.asarray(image.convert("RGB"), dtype=np.int16)
-    palette = np.array([hex_to_rgb(color) for color in colors], dtype=np.int16)
+    # int32, not int16: a squared channel difference reaches 255**2 = 65025,
+    # which overflows int16 and makes argmin pick the wrong colour entirely.
+    pixels = np.asarray(image.convert("RGB"), dtype=np.int32)
+    palette = np.array([hex_to_rgb(color) for color in colors], dtype=np.int32)
 
     # Nearest palette entry per pixel, so a stray colour still lands on a layer.
     distances = np.sum((pixels[:, :, None, :] - palette[None, None, :, :]) ** 2, axis=3)

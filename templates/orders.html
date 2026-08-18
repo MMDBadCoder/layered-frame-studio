@@ -46,7 +46,11 @@
             <div class="order-meta">
               <h3>سفارش شماره {{ order.pk|fa_digits }}</h3>
               <p>
-                پروفایل: {{ order.profile_name|default:"—" }}
+                {% if order.is_ready_image %}
+                  <span class="source-tag">تصویر آماده</span>
+                {% else %}
+                  پروفایل: {{ order.profile_name|default:"—" }}
+                {% endif %}
                 — {{ order.num_layers|fa_digits }} لایه
                 {% if order.width_cm %}
                   — اندازه: {{ order.width_cm|cm }} × {{ order.height_cm|cm }} سانتی‌متر

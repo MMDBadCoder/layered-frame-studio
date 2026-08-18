@@ -23,6 +23,19 @@
   const paletteLayers = byId("paletteLayers");
   const paletteDescription = byId("paletteDescription");
 
+  const readyZone = byId("readyZone");
+  const readyInput = byId("readyInput");
+  const readyBrowseBtn = byId("readyBrowseBtn");
+  const readySection = byId("readySection");
+  const readyPending = byId("readyPending");
+  const readyResult = byId("readyResult");
+  const readyVerdict = byId("readyVerdict");
+  const readyPalette = byId("readyPalette");
+  const readyLayers = byId("readyLayers");
+  const readyCoverage = byId("readyCoverage");
+  const readyReplace = byId("readyReplace");
+  const copyPromptBtn = byId("copyPromptBtn");
+
   const sizeControls = byId("sizeControls");
   const sizeUnavailable = byId("sizeUnavailable");
   const sizeImpossible = byId("sizeImpossible");
@@ -63,6 +76,8 @@
   let appliedConfigObj = null;   // …and the same thing as an object
   let sizing = readJson("sizing-data", null);  // frame limits + pricing
   let sizeValid = false;
+  let mode = "studio";          // "studio" | "ready"
+  let readyPaletteColors = null; // detected palette of a verified ready image
 
   // ----------------------------------------------------------- frame size --
 
@@ -247,6 +262,16 @@
   }
 
   function updateApplyState() {
+    if (isReady()) {
+      // Nothing to re-render: the artwork is the customer's own.
+      applyBtn.classList.add("hidden");
+      applyHint.textContent = hasImage
+        ? "تصویر آمادهٔ شما تأیید شد — اندازه را انتخاب و سفارش را ثبت کنید"
+        : "تصویر لایه‌ای آمادهٔ خود را بارگذاری کنید";
+      return;
+    }
+    applyBtn.classList.remove("hidden");
+
     if (!hasImage || isProcessing) {
       applyBtn.disabled = true;
       applyBtn.classList.remove("is-ready");
@@ -270,7 +295,8 @@
 
   function updateOrderState() {
     if (!orderBtn) return;
-    orderBtn.disabled = !hasImage || isProcessing || !appliedConfigObj || !sizeValid;
+    const ready = !isReady() || Boolean(readyPaletteColors);
+    orderBtn.disabled = !hasImage || isProcessing || !appliedConfigObj || !sizeValid || !ready;
   }
 
   function setLoading(active, message) {
@@ -341,16 +367,119 @@
     processImage(true);
   }
 
+  // ---------------------------------------------------------- ready images --
+
+  function isReady() {
+    return mode === "ready";
+  }
+
+  function setMode(next) {
+    if (mode === next) return;
+    mode = next;
+
+    document.querySelectorAll("[data-mode]").forEach((btn) => {
+      btn.classList.toggle("is-active", btn.dataset.mode === next);
+    });
+    document.querySelectorAll(".studio-only").forEach((el) => el.classList.toggle("hidden", isReady()));
+    document.querySelectorAll(".ready-only").forEach((el) => el.classList.toggle("hidden", !isReady()));
+
+    // Each mode starts from a blank slate so the two paths never mix.
+    resetWorkspace();
+  }
+
+  function resetWorkspace() {
+    hasImage = false;
+    currentFile = null;
+    appliedConfig = null;
+    appliedConfigObj = null;
+    readyPaletteColors = null;
+    sizeValid = false;
+
+    previewGrid.classList.add("hidden");
+    uploadZone.classList.toggle("hidden", isReady());
+    if (readyZone) readyZone.classList.toggle("hidden", !isReady());
+
+    if (readyResult) readyResult.classList.add("hidden");
+    if (readyPending) readyPending.classList.remove("hidden");
+
+    sizeControls.classList.add("hidden");
+    sizeImpossible.classList.add("hidden");
+    sizeUnavailable.classList.remove("hidden");
+    downloadBtn.disabled = true;
+    resultPreview.removeAttribute("src");
+    originalPreview.removeAttribute("src");
+
+    updateApplyState();
+    updateOrderState();
+  }
+
+  function showReadyReport(data) {
+    readyPaletteColors = data.colors;
+
+    readyPending.classList.add("hidden");
+    readyResult.classList.remove("hidden");
+    readyVerdict.textContent = data.message;
+    readyPalette.innerHTML = data.colors
+      .map((color) => `<span class="palette-chip" style="background:${color}" title="${color}"></span>`)
+      .join("");
+    readyLayers.textContent = PF.faDigits(data.color_count);
+    readyCoverage.textContent = `پوشش رنگ‌ها: ${PF.faDigits(data.coverage)}٪`;
+  }
+
+  async function verifyReadyImage(file) {
+    if (!file || !file.type.startsWith("image/")) {
+      PF.toast("لطفاً یک فایل تصویر معتبر انتخاب کنید.", "error");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("image", file);
+
+    setLoading(true, "در حال بررسی تصویر…");
+
+    try {
+      const { response, data } = await PF.post("/api/ready/verify", formData);
+
+      if (!response.ok || !data.ok) {
+        readyPaletteColors = null;
+        readyResult.classList.add("hidden");
+        readyPending.classList.remove("hidden");
+        hasImage = false;
+        PF.toast(data.error || "بررسی تصویر ناموفق بود.", "error", 8000);
+        return;
+      }
+
+      showPreview(data.original_url, data.result_url);
+      showReadyReport(data);
+      hasImage = true;
+      // A verified ready image needs no processing config; the order path
+      // keys off the mode instead.
+      appliedConfigObj = { source: "ready" };
+      appliedConfig = configToString(appliedConfigObj);
+      applySizing(data.sizing);
+    } catch (err) {
+      PF.toast("ارتباط با سرور برقرار نشد.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // --------------------------------------------------------------- orders --
 
   function openConfirm() {
-    const profile = profileById(appliedConfigObj.profile_id) || selectedProfile();
     const account = PF.account;
     const { width, height } = currentSize();
 
     confirmThumb.src = resultPreview.src;
-    confirmProfile.textContent = profile ? profile.name : "—";
-    confirmLayers.textContent = profile ? PF.faDigits(profile.num_layers) : "—";
+
+    if (isReady()) {
+      confirmProfile.textContent = "تصویر آمادهٔ شما";
+      confirmLayers.textContent = PF.faDigits(readyPaletteColors ? readyPaletteColors.length : 0);
+    } else {
+      const profile = profileById(appliedConfigObj.profile_id) || selectedProfile();
+      confirmProfile.textContent = profile ? profile.name : "—";
+      confirmLayers.textContent = profile ? PF.faDigits(profile.num_layers) : "—";
+    }
     confirmSize.textContent = `${PF.faDigits(round1(width))} × ${PF.faDigits(round1(height))} سانتی‌متر`;
     confirmCost.textContent = formatToman(computeCost(width, height));
     confirmQuota.textContent = `${PF.faDigits(account.unreviewed_orders || 0)} از ${PF.faDigits(
@@ -401,7 +530,8 @@
     button.disabled = true;
     button.textContent = "در حال ثبت…";
 
-    const formData = configToFormData(appliedConfigObj);
+    const formData = isReady() ? new FormData() : configToFormData(appliedConfigObj);
+    if (isReady()) formData.append("source", "ready");
     formData.append("note", orderNote.value || "");
     // The server re-derives the height and recomputes the price from this.
     formData.append("width_cm", round1(currentSize().width));
@@ -491,6 +621,54 @@
 
   if (profileSelect) {
     profileSelect.addEventListener("change", renderPalette);
+  }
+
+  document.querySelectorAll("[data-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => setMode(btn.dataset.mode));
+  });
+
+  if (readyZone) {
+    readyBrowseBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      readyInput.click();
+    });
+    readyZone.addEventListener("click", () => readyInput.click());
+    readyInput.addEventListener("change", () => {
+      if (readyInput.files[0]) verifyReadyImage(readyInput.files[0]);
+    });
+    readyZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      readyZone.classList.add("dragover");
+    });
+    readyZone.addEventListener("dragleave", () => readyZone.classList.remove("dragover"));
+    readyZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      readyZone.classList.remove("dragover");
+      if (e.dataTransfer.files[0]) verifyReadyImage(e.dataTransfer.files[0]);
+    });
+  }
+
+  if (readyReplace) {
+    readyReplace.addEventListener("click", () => readyInput.click());
+  }
+
+  if (copyPromptBtn) {
+    copyPromptBtn.addEventListener("click", async () => {
+      const text = byId("aiPrompt").textContent;
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (err) {
+        // Clipboard API needs a secure context; fall back to a selection.
+        const range = document.createRange();
+        range.selectNodeContents(byId("aiPrompt"));
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        document.execCommand("copy");
+        selection.removeAllRanges();
+      }
+      PF.toast("متن پرامپت کپی شد.", "success");
+    });
   }
 
   // Frame size: the two boxes and the slider all drive each other through the

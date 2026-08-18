@@ -1,6 +1,6 @@
 # Product Requirements Document (PRD) — Photo Frame 2D
 
-> Version 1.1 — last updated 2026-08-16 (26 Mordad 1405)
+> Version 1.2 — last updated 2026-08-16 (26 Mordad 1405)
 
 ---
 
@@ -126,7 +126,22 @@ Sign-in accepts either the mobile number or the email.
 | D4 | Admins also set the default colour profile |
 | D5 | If the default profile is deactivated, the first active profile takes over |
 
-### 4.7 Admin panel
+### 4.7 Ready-made images
+
+| Code | Requirement |
+|---|---|
+| R1 | A customer can order an image they built with another tool, without using the studio |
+| R2 | Both paths are offered on the same page via a mode switch |
+| R3 | An uploaded image is accepted only if it is built from solid colours |
+| R4 | The layer palette is detected from the image; no colour profile is involved |
+| R5 | A failing image is rejected with a clear reason, not silently altered |
+| R6 | The stored image contains only the detected colours, so 3D export stays valid |
+| R7 | Sizing, pricing, the quota and STL export behave identically on both paths |
+| R8 | The order records which path produced it |
+| R9 | Admins can tune the strictness of the check, and disable the path entirely |
+| R10 | The UI suggests a concrete way to produce a suitable image (AI model + copyable prompt) |
+
+### 4.8 Admin panel
 
 | ID | Requirement |
 |---|---|
@@ -139,6 +154,7 @@ Sign-in accepts either the mobile number or the email.
 | A7 | User management, including promotion to admin |
 | A8 | Configuration of the render defaults |
 | A9 | Configuration of the 3D export parameters, and STL download |
+| A10 | Configuration of ready-image acceptance rules and the AI helper prompt |
 
 ---
 

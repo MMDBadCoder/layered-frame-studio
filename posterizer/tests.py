@@ -817,3 +817,212 @@ class AdminPanelTests(StudioTestCase):
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, Order.STATUS_APPROVED)
         self.assertEqual(self.order.reviewed_by, self.admin)
+
+
+class ReadyImageTests(StudioTestCase):
+    """The second order path: images the customer built elsewhere."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = self.make_user()
+        self.client.force_login(self.user)
+
+    # --- helpers ---
+
+    @staticmethod
+    def flat_image(colors=((26, 26, 26), (107, 74, 36), (176, 135, 80), (242, 224, 201)),
+                   size=(400, 300), fmt="PNG", quality=90) -> bytes:
+        width, height = size
+        array = np.zeros((height, width, 3), dtype=np.uint8)
+        band = width // len(colors)
+        for index, color in enumerate(colors):
+            array[:, index * band:(index + 1) * band] = color
+        out = io.BytesIO()
+        Image.fromarray(array, "RGB").save(out, format=fmt, quality=quality)
+        return out.getvalue()
+
+    @staticmethod
+    def gradient_image() -> bytes:
+        ramp = np.linspace(0, 255, 400, dtype=np.uint8)
+        array = np.repeat(np.repeat(ramp[None, :, None], 300, 0), 3, 2)
+        out = io.BytesIO()
+        Image.fromarray(array, "RGB").save(out, format="PNG")
+        return out.getvalue()
+
+    def upload_ready(self, payload=None, name="ready.png", content_type="image/png"):
+        payload = payload if payload is not None else self.flat_image()
+        return self.client.post(
+            "/api/ready/verify",
+            {"image": SimpleUploadedFile(name, payload, content_type=content_type)},
+        )
+
+    # --- verification ---
+
+    def test_flat_image_is_accepted_and_its_palette_detected(self):
+        response = self.upload_ready()
+        self.assertEqual(response.status_code, 200, response.content[:400])
+
+        data = response.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["color_count"], 4)
+        self.assertEqual(len(data["colors"]), 4)
+        self.assertTrue(all(c.startswith("#") for c in data["colors"]))
+        self.assertIn("sizing", data)
+
+        # Darkest first, matching how colour profiles number their layers.
+        def luminance(hex_color):
+            r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+        values = [luminance(c) for c in data["colors"]]
+        self.assertEqual(values, sorted(values))
+
+    def test_jpeg_compression_noise_is_tolerated(self):
+        """The same artwork saved as JPEG must still read as four layers."""
+        response = self.upload_ready(self.flat_image(fmt="JPEG", quality=40),
+                                     name="ready.jpg", content_type="image/jpeg")
+        self.assertEqual(response.status_code, 200, response.content[:400])
+        self.assertEqual(response.json()["color_count"], 4)
+
+    def test_gradient_is_rejected_with_an_explanation(self):
+        response = self.upload_ready(self.gradient_image())
+        self.assertEqual(response.status_code, 400)
+
+        data = response.json()
+        self.assertFalse(data["ok"])
+        self.assertIn("یکدست", data["error"])
+        self.assertIn(data["reason"], ("too_many_colors", "low_coverage"))
+
+    def test_photo_is_rejected(self):
+        noise = np.random.default_rng(5).integers(0, 255, (300, 400, 3), dtype=np.uint8)
+        out = io.BytesIO()
+        Image.fromarray(noise, "RGB").save(out, format="PNG")
+        self.assertEqual(self.upload_ready(out.getvalue()).status_code, 400)
+
+    def test_layer_limit_is_enforced_from_settings(self):
+        site = SiteSettings.load()
+        site.ready_max_colors = 3
+        site.save()
+
+        response = self.upload_ready()  # four bands
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["reason"], "too_many_colors")
+
+    def test_feature_can_be_switched_off(self):
+        site = SiteSettings.load()
+        site.ready_images_enabled = False
+        site.save()
+
+        self.assertEqual(self.upload_ready().status_code, 400)
+        self.assertNotContains(self.client.get("/"), 'data-mode="ready"')
+
+    def test_invalid_file_is_rejected(self):
+        response = self.upload_ready(b"not-an-image")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("معتبر", response.json()["error"])
+
+    # --- ordering ---
+
+    def test_ready_image_can_be_ordered_without_a_profile(self):
+        verify = self.upload_ready().json()
+
+        response = self.client.post(
+            "/api/orders/create",
+            {"source": "ready", "width_cm": "40", "note": "تصویر آماده"},
+        )
+        self.assertEqual(response.status_code, 200, response.content[:400])
+
+        order = Order.objects.get()
+        self.assertEqual(order.source, Order.SOURCE_READY)
+        self.assertTrue(order.is_ready_image)
+        self.assertIsNone(order.profile)
+        self.assertEqual(order.profile_name, "")
+        self.assertEqual(order.colors, verify["colors"])
+        self.assertEqual(order.num_layers, 4)
+        self.assertEqual(order.width_cm, Decimal("40.0"))
+        self.assertGreater(order.estimated_cost, 0)
+        self.assertEqual(order.palette_label, "پالت تصویر آماده")
+
+    def test_stored_image_contains_only_the_detected_palette(self):
+        """Compression noise must be snapped away, or the STL would be wrong."""
+        self.upload_ready(self.flat_image(fmt="JPEG", quality=40),
+                          name="ready.jpg", content_type="image/jpeg")
+        self.client.post("/api/orders/create", {"source": "ready", "width_cm": "40"})
+
+        order = Order.objects.get()
+        with Image.open(order.result_image.path) as image:
+            used = {tuple(c) for c in np.array(image.convert("RGB")).reshape(-1, 3)}
+
+        expected = {
+            tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in order.colors
+        }
+        self.assertEqual(used, expected)
+
+    def test_ready_order_exports_an_stl(self):
+        self.upload_ready()
+        self.client.post("/api/orders/create", {"source": "ready", "width_cm": "40"})
+        order = Order.objects.get()
+
+        admin = User.objects.create_superuser(
+            phone="09120000009", email="admin@example.com", password="AdminPass!234"
+        )
+        staff = Client()
+        staff.force_login(admin)
+
+        response = staff.get(f"/orders/{order.pk}/stl/")
+        self.assertEqual(response.status_code, 200)
+        payload = b"".join(response.streaming_content) if response.streaming else response.content
+        count = struct.unpack("<I", payload[80:84])[0]
+        self.assertEqual(len(payload), 84 + count * 50)
+
+    def test_cannot_order_ready_without_verifying_first(self):
+        response = self.client.post("/api/orders/create", {"source": "ready", "width_cm": "40"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_switching_back_to_the_studio_clears_the_ready_state(self):
+        self.upload_ready()
+        self.assertIn("ready_palette", self.client.session)
+
+        self.client.post(
+            "/api/process",
+            {"profile_id": self.profile.id, "image": upload(), "postprocess_method": "none"},
+        )
+        self.assertNotIn("ready_palette", self.client.session)
+
+        # A subsequent "ready" order must not silently reuse the studio render.
+        response = self.client.post("/api/orders/create", {"source": "ready", "width_cm": "40"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Order.objects.get().source, Order.SOURCE_STUDIO)
+
+    def test_ready_orders_count_towards_the_same_quota(self):
+        self.upload_ready()
+        for _ in range(Order.MAX_UNREVIEWED):
+            self.assertEqual(
+                self.client.post("/api/orders/create", {"source": "ready", "width_cm": "40"}).status_code,
+                200,
+            )
+        response = self.client.post("/api/orders/create", {"source": "ready", "width_cm": "40"})
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(response.json()["limit_reached"])
+
+    # --- UI ---
+
+    def test_studio_page_offers_both_paths_and_the_ai_prompt(self):
+        html = self.client.get("/").content.decode()
+        self.assertIn('data-mode="studio"', html)
+        self.assertIn('data-mode="ready"', html)
+        self.assertIn("تصویر آمادهٔ خودم را دارم", html)
+        self.assertIn("Nano Banana Pro", html)
+        self.assertIn('id="aiPrompt"', html)
+
+    def test_ai_helper_can_be_hidden(self):
+        site = SiteSettings.load()
+        site.ai_helper_enabled = False
+        site.save()
+        self.assertNotContains(self.client.get("/"), 'id="aiPrompt"')
+
+    def test_orders_page_marks_ready_images(self):
+        self.upload_ready()
+        self.client.post("/api/orders/create", {"source": "ready", "width_cm": "40"})
+        self.assertContains(self.client.get("/orders/"), "تصویر آماده")

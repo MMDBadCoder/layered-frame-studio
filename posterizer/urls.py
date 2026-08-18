@@ -9,5 +9,6 @@ urlpatterns = [
     path("orders/<int:pk>/stl/", views.order_stl, name="order_stl"),
     path("api/config", views.get_config, name="get_config"),
     path("api/process", views.process, name="process"),
+    path("api/ready/verify", views.ready_verify, name="ready_verify"),
     path("api/orders/create", views.order_create, name="order_create"),
 ]

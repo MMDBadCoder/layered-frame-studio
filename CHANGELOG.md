@@ -4,6 +4,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.2.0] — 2026-08-17
+
+### Added — ready-made images (second order path)
+- `posterizer/ready.py`: verifies that a customer-supplied image really is built
+  from a small set of solid colours, and detects its palette
+- Greedy colour clustering with an artefact-absorbing merge pass, so the same
+  artwork is read identically whether it arrives as a clean PNG or a JPEG
+- Gradients, photographs and near-single-colour images are rejected with a
+  specific Persian explanation
+- `POST /api/ready/verify`; the stored image is snapped onto the detected
+  palette so 3D export stays exact
+- Mode switch on the studio page between building an image and uploading one
+- Orders record their `source`; shown in the admin and on the orders page
+- Admin settings for the acceptance rules, and an editable AI helper card
+  (model name, link and a copyable prompt) shown beside the upload area
+
+### Fixed
+- **Colour matching overflowed `int16`.** Squared channel differences reach
+  65025, which wraps negative in `int16`, so `argmin` could pick a completely
+  wrong palette entry — a pixel exactly equal to layer 0 was mapped to layer 3.
+  This affected the STL exporter's height assignment. Both the exporter and the
+  new detector now use `int32`.
+- `format_html()` called with no interpolation arguments raised `TypeError` on
+  modern Django, crashing the order list for any order with an empty palette
+
+---
+
 ## [1.1.0] — 2026-08-16 (1405-05-26)
 
 ### Added — 3D model export (STL)

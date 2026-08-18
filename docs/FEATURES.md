@@ -1,7 +1,7 @@
 # Feature reference — Photo Frame 2D
 
 The exact behaviour of every feature, for future reference. Each one is covered
-by an automated test in `posterizer/tests.py` (56 tests).
+by an automated test in `posterizer/tests.py` (72 tests).
 
 Persian strings quoted below are the literal UI text, so you can find them in
 the templates and the tests.
@@ -190,6 +190,63 @@ Admins only. Regular users and guests get a 404.
 
 Path: `/orders/<id>/stl/` — the download button appears on the order list and
 on each order's page.
+
+---
+
+## 4.6 Ready-made images (second order path)
+
+Customers who already built a layered image elsewhere can order it directly,
+without going through the studio. The home page carries a two-way mode switch:
+"ساخت تصویر با ابزار ما" and "تصویر آمادهٔ خودم را دارم".
+
+### What gets checked
+An uploaded image is only accepted if it is genuinely built from a small set of
+solid colours. The check is a greedy clustering pass, not an exact colour count,
+because a four-colour PNG saved as JPEG has thousands of near-duplicates:
+
+1. Cluster pixels around their most frequent colours (tolerance 18 in RGB).
+2. Fold every cluster below `ready_min_layer_share` into the nearest real layer
+   — those are edge artefacts, not layers.
+3. Reject if more than `ready_max_colors` layers remain.
+4. Reject if the layers cover less than `ready_min_coverage` of the image
+   (that is what a gradient or a photograph fails).
+5. Reject if fewer than two layers remain — a single-colour image has nothing
+   to build.
+
+Verified behaviour:
+
+| Input | Result |
+|---|---|
+| PNG, 4 flat colours | accepted, 4 layers |
+| Same artwork as JPEG q40 | accepted, 4 layers (ringing absorbed) |
+| Anti-aliased shapes | accepted |
+| Smooth gradient | rejected — "رنگ‌های این تصویر یکدست نیستند" |
+| Photograph | rejected — "این تصویر از رنگ‌های یکدست ساخته نشده است" |
+| Near single colour | rejected — "این تصویر تقریباً تک‌رنگ است" |
+
+### The palette comes from the image
+No colour profile is involved. The detected colours are ordered darkest first
+and stored on the order, so pricing, the orders page and the STL export all work
+exactly as they do for a studio order.
+
+The stored copy of the image is **snapped onto the detected palette**, so it
+contains those colours and nothing else. Without that step, JPEG noise would
+turn into stray terraces in the 3D model.
+
+### Everything else is shared
+Frame sizing, the aspect-ratio rule, price estimation, the confirmation dialog,
+the three-unreviewed-order quota and STL export behave identically on both
+paths. An order records which path produced it (`source`), shown in the admin
+and tagged on the orders page.
+
+Switching back to the studio mode clears the verified ready image, so the two
+paths can never be mixed in one order.
+
+### The suggested workflow
+Beside the upload area sits a card telling the customer how to produce a
+suitable image: send their photo to an AI model with a ready-written prompt,
+then upload the result. The model name, an optional link and the prompt text
+are all editable in the admin, and the prompt has a one-click copy button.
 
 ---
 
