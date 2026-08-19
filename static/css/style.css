@@ -1516,14 +1516,21 @@ a {
   margin-top: 2px;
 }
 
+/* Flex, not grid: an auto-fill grid keeps its empty tracks, so a handful of
+   tiles pack into the first ones — which in RTL is the right-hand edge. Flex
+   wrapping centres every row, including the last, whatever the tile count. */
 .gallery-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 14px;
 }
 
 .gallery-item {
   margin: 0;
+  /* Grows to share a row, but capped so two tiles do not become billboards. */
+  flex: 1 1 150px;
+  max-width: 200px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1563,5 +1570,5 @@ a {
 
 @media (max-width: 900px) {
   .studio-empty { gap: 28px; }
-  .gallery-strip { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); }
+  .gallery-item { flex-basis: 128px; max-width: 160px; }
 }
