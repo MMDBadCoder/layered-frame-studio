@@ -1510,6 +1510,51 @@ a {
   color: #b9a3ff;
 }
 
+/* ── Scrollbars ── */
+
+/* The canvas can scroll once a gallery is present, and the default bar is a
+   heavy light-grey slab against a dark UI. These rules give every scrollable
+   area the same slim, recessed bar the sidebar already had. */
+
+html {
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.canvas-area,
+.config-form,
+.sidebar,
+.modal,
+.ai-prompt,
+.table-scroll {
+  /* scrollbar-width does not inherit, so it is set per container. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* WebKit and older Chromium ignore the two properties above. */
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+  border-radius: 999px;
+  /* A transparent border plus content-box clipping insets the thumb, so it
+     reads as a slim pill rather than filling the whole gutter. */
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-muted);
+}
+
 /* ── Homepage gallery ── */
 
 .studio-empty {
