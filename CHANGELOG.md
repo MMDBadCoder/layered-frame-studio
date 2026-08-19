@@ -23,6 +23,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
   the border unchanged. Verified watertight for 4, 7 and 16-layer plates over
   both banded and noisy inputs.
 
+### Added — project notes
+- `CLAUDE.md` records what the code cannot state for itself: where the
+  Persian/English boundary falls, the rules that must not be relaxed, and the
+  traps this codebase has already paid for — the int16 overflow in colour
+  matching, why EXIF orientation changes the physical frame's shape, why file
+  size is the wrong limit for an image, and why a local-memory cache divides
+  every rate limit by the worker count.
+
 ---
 
 ## [1.1.0] — 2026-08-19
