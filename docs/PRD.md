@@ -115,6 +115,8 @@ Sign-in accepts either the mobile number or the email.
 | T6 | The model resolution is configurable (detail vs. file size) |
 | T7 | The output must be a closed, manifold, printable solid |
 | T8 | Admin-only access |
+| T9 | A raised border surrounds the picture at the tallest layer's height |
+| T10 | Border thickness is proportional to the picture and configurable |
 
 ### 4.6 Render defaults
 

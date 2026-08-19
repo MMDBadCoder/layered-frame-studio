@@ -193,6 +193,25 @@ class SiteSettings(models.Model):
             "(حالت متداول برای قاب‌های لایه‌ای). خاموش باشد: برعکس."
         ),
     )
+    stl_border_percent = models.DecimalField(
+        "ضخامت قاب دور تصویر (درصد)",
+        max_digits=4,
+        decimal_places=1,
+        default=Decimal("3.0"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("20"))],
+        help_text=(
+            "نسبت به کوچک‌ترین ضلع تصویر محاسبه می‌شود و به بیرون اضافه می‌گردد؛ "
+            "ارتفاع قاب برابر بلندترین لایه است. صفر یعنی بدون قاب."
+        ),
+    )
+    stl_border_min_mm = models.DecimalField(
+        "حداقل ضخامت قاب (میلی‌متر)",
+        max_digits=5,
+        decimal_places=1,
+        default=Decimal("3.0"),
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="برای قاب‌های کوچک، ضخامت هرگز کمتر از این مقدار نمی‌شود.",
+    )
     stl_max_resolution = models.PositiveIntegerField(
         "حداکثر دقت مدل سه‌بعدی (پیکسل)",
         default=400,
@@ -299,6 +318,21 @@ class SiteSettings(models.Model):
             "url": self.ai_helper_url,
             "prompt": self.ai_helper_prompt,
         }
+
+    def border_mm(self, width_mm: float, height_mm: float) -> float:
+        """
+        Thickness of the raised surround, in millimetres.
+
+        Taken as a percentage of the picture's *shorter* side, so a panorama
+        does not end up with an overwhelming border on its short edges, and
+        floored at a minimum so a small frame still gets something printable.
+        """
+        percent = float(self.stl_border_percent)
+        if percent <= 0:
+            return 0.0
+
+        thickness = min(float(width_mm), float(height_mm)) * percent / 100.0
+        return round(max(thickness, float(self.stl_border_min_mm)), 2)
 
     def layer_heights_mm(self, num_layers: int) -> list:
         """

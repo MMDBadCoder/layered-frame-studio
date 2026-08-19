@@ -446,6 +446,9 @@ def order_stl(request, pk: int):
                 height_mm=height_mm,
                 max_resolution=site.stl_max_resolution,
                 header=f"Photo Frame 3D order {order.pk}",
+                # The surround is added outside the picture, so the ordered
+                # image keeps its size and the plate comes out slightly larger.
+                border_mm=site.border_mm(width_mm, height_mm),
             )
     except (ValueError, OSError) as exc:
         return HttpResponseBadRequest(f"ساخت مدل سه‌بعدی ناموفق بود: {exc}")
@@ -454,6 +457,7 @@ def order_stl(request, pk: int):
     response["Content-Disposition"] = f'attachment; filename="photo-frame-3d-order-{order.pk}.stl"'
     response["X-Model-Triangles"] = str(stats["triangles"])
     response["X-Model-Size-Mm"] = f"{stats['width_mm']}x{stats['height_mm']}x{stats['max_height_mm']}"
+    response["X-Model-Border-Mm"] = str(stats["border_mm"])
     return response
 
 

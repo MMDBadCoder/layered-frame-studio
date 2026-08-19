@@ -4,6 +4,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.2.0] — 2026-08-19
+
+### Added — raised border on the 3D model
+- The exported plate now carries a border around the picture, standing at the
+  height of the tallest layer: seven layers at 2 mm gives a 14 mm surround
+  regardless of what the picture reaches at its own edges.
+- Thickness is a share of the picture's shorter side — default 3%, with a 3 mm
+  floor so small frames still get something printable — both configurable in
+  the site settings. Setting the percentage to 0 removes the border.
+- The border is added outwards, so the ordered picture keeps its exact size and
+  the finished plate grows by twice the thickness on each axis. The download
+  reports the applied value in an `X-Model-Border-Mm` header, which can differ
+  slightly from the requested one because thickness is quantised to whole grid
+  cells.
+- Implemented by padding the height map rather than emitting separate geometry,
+  so the existing wall splitting, saddle repair and manifold guarantees apply to
+  the border unchanged. Verified watertight for 4, 7 and 16-layer plates over
+  both banded and noisy inputs.
+
+---
+
 ## [1.1.0] — 2026-08-19
 
 ### Fixed

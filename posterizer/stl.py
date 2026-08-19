@@ -106,6 +106,45 @@ def resolve_saddles(indices: np.ndarray, max_passes: int = 32) -> tuple:
     return fixed, changed
 
 
+def add_border(heights: np.ndarray, width_mm: float, height_mm: float,
+               border_mm: float, border_height_mm: float) -> tuple:
+    """
+    Surround the relief with a raised border at the tallest layer height.
+
+    Implemented by padding the height map rather than by building extra
+    geometry: the mesh builder then treats the border as ordinary cells, so the
+    wall splitting, saddle handling and manifold guarantees all apply to it
+    without a second code path.
+
+    The picture keeps its ordered size and the plate grows outwards, so the
+    finished object is `2 x border` wider and taller than the image itself.
+    Returns (padded_heights, outer_width_mm, outer_height_mm, applied_mm).
+    """
+    if border_mm <= 0:
+        return heights, width_mm, height_mm, 0.0
+
+    rows, cols = heights.shape
+    dx, dy = width_mm / cols, height_mm / rows
+
+    # At least one cell, or the border would round away to nothing on a
+    # coarse grid and silently disappear.
+    cells_x = max(1, round(border_mm / dx))
+    cells_y = max(1, round(border_mm / dy))
+
+    padded = np.pad(
+        heights,
+        ((cells_y, cells_y), (cells_x, cells_x)),
+        mode="constant",
+        constant_values=border_height_mm,
+    )
+    return (
+        padded,
+        width_mm + 2 * cells_x * dx,
+        height_mm + 2 * cells_y * dy,
+        round((cells_x * dx + cells_y * dy) / 2, 3),
+    )
+
+
 class MeshBuilder:
     """Collects axis-aligned quads and writes them out as binary STL."""
 
@@ -270,6 +309,7 @@ def order_to_stl(
     height_mm: float,
     max_resolution: int = 400,
     header: str = "Photo Frame 3D",
+    border_mm: float = 0.0,
 ) -> tuple:
     """
     Render an order's layered image into binary STL bytes.
@@ -294,7 +334,15 @@ def order_to_stl(
     lookup = np.array(layer_heights_mm, dtype=np.float64)
     heights = lookup[indices]
 
-    builder = build_mesh(heights, width_mm, height_mm, levels=layer_heights_mm)
+    # The border sits at the tallest *layer*, not the tallest height present in
+    # this particular picture — a photo that never reaches the top colour still
+    # gets a full-height surround.
+    border_height = float(max(layer_heights_mm))
+    heights, outer_width, outer_height, applied_border = add_border(
+        heights, width_mm, height_mm, border_mm, border_height
+    )
+
+    builder = build_mesh(heights, outer_width, outer_height, levels=layer_heights_mm)
     payload = builder.to_stl_bytes(header)
 
     used = np.bincount(indices.ravel(), minlength=len(colors))
@@ -303,8 +351,11 @@ def order_to_stl(
         "repaired_cells": repaired,
         "triangles": builder.triangle_count,
         "bytes": len(payload),
-        "width_mm": round(width_mm, 2),
-        "height_mm": round(height_mm, 2),
+        "width_mm": round(outer_width, 2),
+        "height_mm": round(outer_height, 2),
+        "image_width_mm": round(width_mm, 2),
+        "image_height_mm": round(height_mm, 2),
+        "border_mm": applied_border,
         "max_height_mm": round(float(heights.max()), 2),
         "min_height_mm": round(float(heights.min()), 2),
         "layer_pixel_counts": [int(value) for value in used],

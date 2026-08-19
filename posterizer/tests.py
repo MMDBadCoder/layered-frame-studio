@@ -754,9 +754,17 @@ class StlExportTests(StudioTestCase):
         self.client.force_login(self.admin)
         response = self.client.get(f"/orders/{self.order.pk}/stl/")
 
-        # Order is 40 x 30 cm -> 400 x 300 mm; 4 layers x 3 mm -> 12 mm tallest
-        # (the tallest step is the same whichever end of the palette gets it).
-        self.assertEqual(response["X-Model-Size-Mm"], "400.0x300.0x12.0")
+        # Order is 40 x 30 cm -> a 400 x 300 mm picture, and 4 layers x 3 mm ->
+        # 12 mm tallest (the same whichever end of the palette gets it). The
+        # advertised plate is the picture plus the border on every side, so it
+        # is larger than the ordered size by twice the border.
+        width, height, tallest = response["X-Model-Size-Mm"].split("x")
+        border = float(response["X-Model-Border-Mm"])
+
+        self.assertEqual(tallest, "12.0")
+        self.assertGreater(border, 0)
+        self.assertAlmostEqual(float(width), 400.0 + 2 * border, places=1)
+        self.assertAlmostEqual(float(height), 300.0 + 2 * border, places=1)
 
     def test_every_column_is_solid_from_the_base_to_its_top(self):
         """
@@ -1426,3 +1434,147 @@ class GalleryTests(StudioTestCase):
                    follow=True)
         self.order.refresh_from_db()
         self.assertFalse(self.order.in_gallery)
+
+
+class StlBorderTests(StudioTestCase):
+    """The raised surround added around the picture."""
+
+    @staticmethod
+    def banded_image(layers: int, size=(400, 300)):
+        colors = [f"#{v:02x}{v:02x}{v:02x}"
+                  for v in np.linspace(16, 240, layers).round().astype(int)]
+        rgb = [tuple(int(c[i:i + 2], 16) for i in (1, 3, 5)) for c in colors]
+        width, height = size
+        array = np.zeros((height, width, 3), dtype=np.uint8)
+        band = width // layers
+        for index, colour in enumerate(rgb):
+            array[:, index * band:(index + 1) * band] = colour
+        return Image.fromarray(array, "RGB"), colors
+
+    def test_thickness_is_a_share_of_the_shorter_side(self):
+        site = SiteSettings.load()
+        site.stl_border_percent = Decimal("3.0")
+        site.stl_border_min_mm = Decimal("0.0")
+        site.save()
+
+        self.assertAlmostEqual(site.border_mm(200, 150), 4.5)   # 3% of 150
+        self.assertAlmostEqual(site.border_mm(400, 300), 9.0)   # 3% of 300
+        # A panorama takes its border from the short edge, not the long one.
+        self.assertAlmostEqual(site.border_mm(600, 150), 4.5)
+
+    def test_a_minimum_thickness_protects_small_frames(self):
+        site = SiteSettings.load()
+        site.stl_border_percent = Decimal("3.0")
+        site.stl_border_min_mm = Decimal("3.0")
+        site.save()
+        # 3% of 75mm is 2.25mm, below the floor.
+        self.assertEqual(site.border_mm(100, 75), 3.0)
+
+    def test_zero_percent_disables_the_border(self):
+        site = SiteSettings.load()
+        site.stl_border_percent = Decimal("0")
+        site.save()
+        self.assertEqual(site.border_mm(200, 150), 0.0)
+
+        from .stl import order_to_stl
+
+        image, colors = self.banded_image(4)
+        heights = site.layer_heights_mm(4)
+        _, stats = order_to_stl(image, colors, heights, 200.0, 150.0,
+                                max_resolution=100, border_mm=0.0)
+        self.assertEqual(stats["border_mm"], 0.0)
+        self.assertEqual((stats["width_mm"], stats["height_mm"]), (200.0, 150.0))
+
+    def test_the_plate_grows_outwards_and_the_picture_keeps_its_size(self):
+        from .stl import order_to_stl
+
+        site = SiteSettings.load()
+        image, colors = self.banded_image(4)
+        heights = site.layer_heights_mm(4)
+
+        _, stats = order_to_stl(image, colors, heights, 200.0, 150.0,
+                                max_resolution=200, border_mm=4.0)
+
+        self.assertEqual((stats["image_width_mm"], stats["image_height_mm"]), (200.0, 150.0))
+        self.assertAlmostEqual(stats["width_mm"], 200.0 + 2 * stats["border_mm"], places=1)
+        self.assertAlmostEqual(stats["height_mm"], 150.0 + 2 * stats["border_mm"], places=1)
+
+    def test_the_border_stands_at_the_tallest_layer(self):
+        """Seven layers means a surround seven units high, as specified."""
+        from .stl import order_to_stl
+
+        site = SiteSettings.load()
+        site.stl_layer_height_mm = Decimal("2.00")
+        site.save()
+
+        image, colors = self.banded_image(7)
+        heights = site.layer_heights_mm(7)
+        self.assertEqual(max(heights), 14.0)          # 7 x 2mm
+
+        payload, stats = order_to_stl(image, colors, heights, 250.0, 150.0,
+                                      max_resolution=150, border_mm=5.0)
+        self.assertEqual(stats["max_height_mm"], 14.0)
+
+        count = struct.unpack("<I", payload[80:84])[0]
+        dtype = np.dtype([("n", "<3f4"), ("v", "<3,3f4"), ("a", "<u2")])
+        verts = np.frombuffer(payload[84:], dtype=dtype, count=count)["v"]
+        self.assertAlmostEqual(float(verts[:, :, 2].max()), 14.0, places=3)
+
+        # The outermost ring must be at full height, not whatever the picture
+        # happens to reach at its edge.
+        outer = verts[(verts[:, :, 0] < 1.0).all(axis=1)]
+        self.assertAlmostEqual(float(outer[:, :, 2].max()), 14.0, places=3)
+
+    def test_a_bordered_plate_is_still_watertight(self):
+        from .stl import add_border, build_mesh, mesh_is_closed, resolve_saddles
+
+        rng = np.random.default_rng(11)
+        heights = [(index + 1) * 1.5 for index in range(7)]
+
+        for label, indices in (
+            ("bands", np.repeat(np.arange(7)[None, :], 30, axis=0).repeat(6, axis=1)),
+            ("noise", rng.integers(0, 7, (34, 46))),
+        ):
+            repaired, _ = resolve_saddles(indices)
+            padded, width, height, applied = add_border(
+                np.array(heights)[repaired], 120.0, 90.0, 5.0, max(heights)
+            )
+            builder = build_mesh(padded, width, height, levels=heights)
+            self.assertTrue(mesh_is_closed(builder), f"{label} with a border is not watertight")
+            self.assertGreater(applied, 0)
+
+    def test_the_border_never_rounds_away_on_a_coarse_grid(self):
+        from .stl import add_border
+
+        heights = np.full((10, 10), 4.0)
+        # 1mm border against 20mm cells would round to zero without a floor.
+        _, width, height, applied = add_border(heights, 200.0, 200.0, 1.0, 4.0)
+        self.assertGreater(applied, 0)
+        self.assertGreater(width, 200.0)
+        self.assertGreater(height, 200.0)
+
+    def test_the_download_reports_the_border_it_used(self):
+        user = self.make_user()
+        self.client.force_login(user)
+        self.render_image()
+        self.client.post(
+            "/api/orders/create",
+            {"profile_id": self.profile.id, "postprocess_method": "none", "width_cm": "40"},
+        )
+        order = Order.objects.get()
+
+        admin = User.objects.create_superuser(
+            phone="09120000009", email="admin@example.com", password="AdminPass!234"
+        )
+        staff = Client()
+        staff.force_login(admin)
+
+        response = staff.get(f"/orders/{order.pk}/stl/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("X-Model-Border-Mm", response.headers)
+        self.assertGreater(float(response["X-Model-Border-Mm"]), 0)
+
+        # The advertised plate size includes the surround.
+        width, height, _ = response["X-Model-Size-Mm"].split("x")
+        border = float(response["X-Model-Border-Mm"])
+        self.assertAlmostEqual(float(width), 400.0 + 2 * border, places=1)

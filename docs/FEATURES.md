@@ -1,7 +1,7 @@
 # Feature reference — Photo Frame 3D
 
 The exact behaviour of every feature, for future reference. Each one is covered
-by an automated test in `posterizer/tests.py` (94 tests).
+by an automated test in `posterizer/tests.py` (102 tests).
 
 Persian strings quoted below are the literal UI text, so you can find them in
 the templates and the tests.
@@ -186,8 +186,29 @@ the tallest step** — dark areas are the deep ones on a layered frame. So with 
 Untick **"تیره‌ترین لایه بلندترین باشد"** ("the darkest layer is the tallest")
 in the site settings to run it the other way round.
 
+### The raised surround
+A border runs around the picture at the height of the **tallest layer** — seven
+layers at 2 mm means a 14 mm surround, whatever the picture itself reaches at
+its edges.
+
+- Thickness is a share of the picture's **shorter** side (default 3%), so a
+  panorama does not get an overwhelming border on its short edges. A minimum in
+  millimetres (default 3 mm) stops a small frame getting a border too thin to
+  print. Both are set in the site settings; 0% removes the border entirely.
+- It is added **outwards**: the ordered picture keeps its exact size and the
+  finished plate is `2 × thickness` wider and taller. A 20×15 cm order with a
+  4.5 mm border becomes a 20.9×15.9 cm plate.
+- Thickness is quantised to whole grid cells, so the applied value can differ
+  from the requested one by less than one cell. The download reports what was
+  actually used in the `X-Model-Border-Mm` header.
+
+Implementation note: the border is produced by padding the height map, not by
+building separate geometry, so the wall splitting, saddle repair and manifold
+guarantees cover it with no second code path.
+
 ### Dimensions
-- The plate's width and length match the ordered frame size exactly (cm → mm)
+- The picture area matches the ordered frame size exactly (cm → mm); the plate
+  is that plus the border on each side
 - Older orders without a size fall back to a default size inside the allowed range
 - Total height = layer count × layer height
 

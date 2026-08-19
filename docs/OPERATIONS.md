@@ -183,6 +183,10 @@ STL generation happens on the server, on demand; nothing is stored.
   resolution"; size scales roughly with the square of that number.
 - Total model height = layer count × "layer height". With 5 layers at 2 mm, the
   tallest point is 10 mm.
+- A border runs around the picture at that same tallest height. Its thickness is
+  a percentage of the picture's shorter side (default 3%, floor 3 mm), so the
+  finished plate is larger than the ordered picture by twice that on each axis.
+  Set the percentage to 0 to switch the border off.
 
 ---
 
