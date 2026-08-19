@@ -62,6 +62,7 @@ a {
 }
 
 .workspace-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -230,18 +231,35 @@ a {
 
 .canvas-area {
   flex: 1;
+  /* Without this a flex item will not shrink below its content, so the canvas
+     grew past the viewport instead of scrolling and .app's overflow:hidden
+     sliced the top off. */
+  min-height: 0;
   position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   padding: 28px;
   overflow: auto;
 }
 
+/* Centred via auto margins rather than align-items/justify-content: centred
+   flex content overflows in BOTH directions, which puts the top of a tall
+   panel out of reach above the scroll origin. Auto margins collapse to zero
+   once space runs out, so the content starts at the top and scrolls normally. */
+.canvas-area > .studio-empty,
+.canvas-area > .ready-intro,
+.canvas-area > .preview-grid {
+  margin: auto;
+}
+
 .upload-zone {
   width: 100%;
-  max-width: 560px;
+  /* Bound the WIDTH by viewport height, not the height directly: with
+     aspect-ratio the height is derived from the width, so constraining the
+     height instead would stretch the box out of shape on short screens. */
+  max-width: min(560px, 58vh);
   aspect-ratio: 4 / 3;
+  flex-shrink: 0;
   border: 2px dashed var(--border-strong);
   border-radius: var(--radius);
   background: var(--bg-surface);
@@ -1255,6 +1273,7 @@ a {
 /* ── Workspace toolbar + mode switch ── */
 
 .workspace-toolbar {
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
   padding: 14px 28px;
@@ -1497,13 +1516,13 @@ a {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 40px;
+  gap: 26px;
   width: 100%;
 }
 
 .gallery { width: 100%; max-width: 1040px; }
 
-.gallery-head { text-align: center; margin-bottom: 18px; }
+.gallery-head { text-align: center; margin-bottom: 14px; }
 
 .gallery-head h2 {
   font-size: 1.05rem;
@@ -1529,8 +1548,8 @@ a {
 .gallery-item {
   margin: 0;
   /* Grows to share a row, but capped so two tiles do not become billboards. */
-  flex: 1 1 150px;
-  max-width: 200px;
+  flex: 1 1 140px;
+  max-width: 172px;
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
