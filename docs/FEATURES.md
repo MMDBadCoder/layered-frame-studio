@@ -1,7 +1,7 @@
 # Feature reference — Photo Frame 3D
 
 The exact behaviour of every feature, for future reference. Each one is covered
-by an automated test in `posterizer/tests.py` (72 tests).
+by an automated test in `posterizer/tests.py` (94 tests).
 
 Persian strings quoted below are the literal UI text, so you can find them in
 the templates and the tests.
@@ -16,6 +16,25 @@ the templates and the tests.
 - 20 MB maximum → message: "حجم تصویر بیش از حد مجاز است (حداکثر ۲۰ مگابایت)."
 - Non-image file → "فایل انتخاب‌شده یک تصویر معتبر نیست."
 - The original image is kept on disk, so changing settings does not require a re-upload
+
+### 1.1.5 What happens to an upload before anything else sees it
+Every uploaded image passes through `posterizer/images.py` first:
+
+- **Orientation is corrected.** A phone stores a portrait photo as landscape
+  pixels plus an EXIF tag saying "rotate me". The tag is applied and then
+  discarded. This matters beyond the preview: the aspect ratio decides the
+  shape of the physical frame, so ignoring it would print a landscape frame for
+  a portrait photo.
+- **Resolution is capped.** Above 40 MP the upload is refused with the actual
+  dimensions in the message. Anything above 1.5 MP is scaled down before
+  processing — the STL sampler only takes ~400 cells across, so finer detail
+  cannot reach the printed object and only costs processing time. A 12 MP photo
+  now renders in about 2 seconds instead of not finishing at all.
+- **Dimensions are read from the header before any pixels are decoded**, so a
+  small file that expands to gigapixels is refused rather than decoded.
+- **Renders are rate limited** per IP address (20 per 5 minutes by default).
+  The endpoint needs no account and is CPU-bound, which made it the cheapest
+  way to take the site down.
 
 ### 1.2 Colour profile
 - The user picks **exactly one** of the active profiles
@@ -258,6 +277,27 @@ narrower than 900 px the two columns stack.
 
 The model name, an optional link and the prompt text are all editable in the
 admin.
+
+---
+
+## 4.7 Homepage gallery
+
+Admins choose which finished orders are shown as examples on the landing page.
+
+- Tick **«نمایش در گالری صفحهٔ اصلی»** on an order, or select several and use
+  the bulk action. Optional caption and display order.
+- Orders without a rendered image are skipped.
+- The strip appears under the upload area, only while no image is loaded, and
+  only when at least one order has been flagged.
+
+**What becomes public, and what does not.** Flagging an order makes *only its
+rendered layered image* publicly fetchable. The customer's original photograph
+stays private regardless of the flag, and no name, phone number or email is
+ever rendered — the caption falls back to the palette name, not a person.
+
+There is deliberately no automatic selection: someone's face is being published,
+so the choice is manual. Ask the customer first. A customer-facing opt-in at
+order time would be a sensible next step.
 
 ---
 

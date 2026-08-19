@@ -141,7 +141,16 @@ Sign-in accepts either the mobile number or the email.
 | R9 | Admins can tune the strictness of the check, and disable the path entirely |
 | R10 | The UI suggests a concrete way to produce a suitable image (AI model + copyable prompt) |
 
-### 4.8 Admin panel
+### 4.8 Homepage gallery
+
+| ID | Requirement |
+|---|---|
+| L1 | Admins choose which finished orders appear as examples on the landing page |
+| L2 | Only the rendered image becomes public; the original photo never does |
+| L3 | No customer name or contact detail is ever shown |
+| L4 | Selection is manual — never automatic — because a person's face is being published |
+
+### 4.9 Admin panel
 
 | ID | Requirement |
 |---|---|
@@ -155,6 +164,7 @@ Sign-in accepts either the mobile number or the email.
 | A8 | Configuration of the render defaults |
 | A9 | Configuration of the 3D export parameters, and STL download |
 | A10 | Configuration of ready-image acceptance rules and the AI helper prompt |
+| A11 | Choosing which orders appear in the homepage gallery |
 
 ---
 

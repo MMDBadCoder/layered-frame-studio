@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static jalali_tags %}
 
 {% block title %}قاب عکس سه‌بعدی{% endblock %}
 
@@ -49,6 +49,7 @@
     {% endif %}
 
     <section class="canvas-area" id="canvasArea">
+      <div class="studio-empty" id="studioEmpty">
       <div class="upload-zone" id="uploadZone">
         <input type="file" id="fileInput" accept="image/*" hidden>
         <div class="upload-content">
@@ -63,6 +64,30 @@
           <p>یا برای انتخاب کلیک کنید — فرمت‌های JPG، PNG و WebP پشتیبانی می‌شوند</p>
           <button type="button" class="btn btn-primary" id="browseBtn">انتخاب تصویر</button>
         </div>
+      </div>
+
+      {% if gallery %}
+      <section class="gallery" aria-labelledby="galleryTitle">
+        <div class="gallery-head">
+          <h2 id="galleryTitle">نمونه‌های ساخته‌شده</h2>
+          <p>قاب‌هایی که برای مشتریان دیگر چاپ شده‌اند</p>
+        </div>
+        <div class="gallery-strip">
+          {% for item in gallery %}
+          <figure class="gallery-item">
+            <img src="{% url 'order_image' item.pk 'result' %}"
+                 alt="نمونهٔ قاب: {{ item.gallery_title }}" loading="lazy" decoding="async">
+            <figcaption>
+              <span class="gallery-name">{{ item.gallery_title }}</span>
+              <span class="gallery-meta">
+                {{ item.num_layers|fa_digits }} لایه{% if item.width_cm %} — {{ item.width_cm|cm }}×{{ item.height_cm|cm }} سانتی‌متر{% endif %}
+              </span>
+            </figcaption>
+          </figure>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
       </div>
 
       <div class="ready-intro hidden" id="readyIntro">

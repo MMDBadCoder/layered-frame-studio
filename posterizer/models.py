@@ -458,6 +458,12 @@ class OrderQuerySet(models.QuerySet):
     def unreviewed(self):
         return self.filter(status__in=Order.UNREVIEWED_STATUSES)
 
+    def gallery(self):
+        """Orders an admin has chosen to show on the homepage."""
+        return self.filter(in_gallery=True).exclude(result_image="").order_by(
+            "gallery_order", "-created_at"
+        )
+
 
 class OrderManager(models.Manager.from_queryset(OrderQuerySet)):
     def unreviewed_count(self, user) -> int:
@@ -467,6 +473,9 @@ class OrderManager(models.Manager.from_queryset(OrderQuerySet)):
 
     def remaining_slots(self, user) -> int:
         return max(0, Order.MAX_UNREVIEWED - self.unreviewed_count(user))
+
+    def gallery(self, limit: int = 12):
+        return self.get_queryset().gallery()[:limit]
 
 
 class Order(models.Model):
@@ -558,6 +567,26 @@ class Order(models.Model):
 
     note = models.TextField("توضیحات کاربر", blank=True)
 
+    # --- homepage gallery ---------------------------------------------------
+    # An admin picks which finished orders are worth showing. Only the rendered
+    # layered image is ever exposed publicly — never the customer's original
+    # photograph, and never their name.
+    in_gallery = models.BooleanField(
+        "نمایش در گالری صفحهٔ اصلی",
+        default=False,
+        db_index=True,
+        help_text="فقط تصویر لایه‌ای نمایش داده می‌شود، نه عکس اصلی کاربر.",
+    )
+    gallery_caption = models.CharField(
+        "عنوان در گالری",
+        max_length=80,
+        blank=True,
+        help_text="اگر خالی بماند، نام پروفایل رنگی نمایش داده می‌شود.",
+    )
+    gallery_order = models.PositiveSmallIntegerField(
+        "ترتیب در گالری", default=0, help_text="عدد کوچک‌تر، جلوتر نمایش داده می‌شود."
+    )
+
     status = models.CharField(
         "وضعیت", max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True
     )
@@ -601,6 +630,13 @@ class Order(models.Model):
     @property
     def is_ready_image(self) -> bool:
         return self.source == self.SOURCE_READY
+
+    @property
+    def gallery_title(self) -> str:
+        """Caption shown under a gallery tile — never the customer's name."""
+        if self.gallery_caption:
+            return self.gallery_caption
+        return self.profile_name or "تصویر آماده"
 
     @property
     def palette_label(self) -> str:

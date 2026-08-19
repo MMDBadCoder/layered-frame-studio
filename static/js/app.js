@@ -5,6 +5,7 @@
 (() => {
   const byId = (id) => document.getElementById(id);
 
+  const studioEmpty = byId("studioEmpty");
   const uploadZone = byId("uploadZone");
   const fileInput = byId("fileInput");
   const browseBtn = byId("browseBtn");
@@ -313,7 +314,7 @@
   // ------------------------------------------------------------ rendering --
 
   function showPreview(originalUrl, resultUrl) {
-    uploadZone.classList.add("hidden");
+    studioEmpty.classList.add("hidden");
     if (readyIntro) readyIntro.classList.add("hidden");
     previewGrid.classList.remove("hidden");
 
@@ -422,7 +423,7 @@
     sizeValid = false;
 
     previewGrid.classList.add("hidden");
-    uploadZone.classList.toggle("hidden", isReady());
+    studioEmpty.classList.toggle("hidden", isReady());
     if (readyIntro) readyIntro.classList.toggle("hidden", !isReady());
 
     if (readyResult) readyResult.classList.add("hidden");

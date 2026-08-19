@@ -169,8 +169,10 @@ if ! has_systemd; then
   warn "systemd is not available; skipping this step."
   warn "start the app manually:  ./run.sh"
 else
-  WORKERS="$(( $(nproc 2>/dev/null || echo 1) * 2 + 1 ))"
-  [ "$WORKERS" -gt 5 ] && WORKERS=5   # image work is CPU-heavy and memory-hungry
+  # Rendering is CPU-bound, not IO-bound, so the usual 2*cores+1 rule does not
+  # apply: extra workers just contend for the same cores and add memory.
+  WORKERS="$(( $(nproc 2>/dev/null || echo 1) + 1 ))"
+  [ "$WORKERS" -gt 4 ] && WORKERS=4
 
   cat > "$SERVICE_FILE" <<EOF
 [Unit]

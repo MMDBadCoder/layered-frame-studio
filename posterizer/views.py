@@ -9,6 +9,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponse, HttpResponseBadRequest, JsonResponse
+from django.contrib.auth.views import redirect_to_login
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
@@ -17,6 +18,8 @@ from PIL import Image
 from accounts.views import anonymous_payload, user_payload
 from main import DEFAULT_CONFIG, process_image_bytes
 
+from . import throttle
+from .images import UploadRejected, normalise_upload
 from .jalali import format_cm, format_toman, to_persian_digits
 from .models import ColorProfile, Order, SiteSettings
 from .ready import prepare_ready_image, verify_ready_image
@@ -255,6 +258,14 @@ def ready_verify(request):
     We only confirm it is built from a small set of solid colours, then snap
     away compression noise so the stored copy is exactly those colours.
     """
+    allowed, retry_after = throttle.check(request, "render")
+    if not allowed:
+        return JsonResponse(
+            {"ok": False, "error": "تعداد درخواست‌های شما زیاد بوده است. چند دقیقه بعد دوباره تلاش کنید."},
+            status=429,
+            headers={"Retry-After": str(retry_after)},
+        )
+
     site = SiteSettings.load()
     if not site.ready_images_enabled:
         return JsonResponse(
@@ -272,10 +283,12 @@ def ready_verify(request):
             status=400,
         )
 
+    # Lossless on this path: re-encoding with JPEG would introduce exactly the
+    # compression noise the solid-colour check below is designed to catch.
     try:
-        Image.open(io.BytesIO(image_bytes)).verify()
-    except Exception:
-        return JsonResponse({"ok": False, "error": "فایل انتخاب‌شده یک تصویر معتبر نیست."}, status=400)
+        image_bytes, _ = normalise_upload(image_bytes, lossless=True)
+    except UploadRejected as exc:
+        return JsonResponse({"ok": False, "error": str(exc)}, status=400)
 
     try:
         report = verify_ready_image(image_bytes, **site.ready_image_rules())
@@ -336,6 +349,7 @@ def index(request):
         "selected_profile_id": selected.id if selected else None,
         "sizing": sizing_payload(),
         "superpixels_available": SUPERPIXELS_AVAILABLE,
+        "gallery": Order.objects.gallery(limit=8),
         "ready_enabled": site.ready_images_enabled,
         "ready_max_colors": site.ready_max_colors,
         "ai_helper": site.ai_helper(),
@@ -366,21 +380,27 @@ def my_orders(request):
     )
 
 
-@login_required
 @require_GET
 def order_image(request, pk: int, kind: str):
     """
     Stream an order's image.
 
-    Order images are private, so they are never served straight off disk:
-    only the owner and admins may fetch one.
+    Order images are private and are never served straight off disk. The one
+    exception is a rendered image an admin has put in the homepage gallery:
+    that is public by definition. The customer's original photograph is never
+    public, whatever the gallery flag says.
     """
     if kind not in ("result", "original"):
         raise Http404
 
     order = get_object_or_404(Order, pk=pk)
-    if order.user_id != request.user.id and not request.user.is_staff:
-        raise Http404
+
+    public = kind == "result" and order.in_gallery
+    if not public:
+        if not request.user.is_authenticated:
+            return redirect_to_login(request.get_full_path())
+        if order.user_id != request.user.id and not request.user.is_staff:
+            raise Http404
 
     field = order.result_image if kind == "result" else order.original_image
     if not field:
@@ -477,6 +497,14 @@ def get_config(request):
 
 @require_POST
 def process(request):
+    allowed, retry_after = throttle.check(request, "render")
+    if not allowed:
+        return JsonResponse(
+            {"error": "تعداد درخواست‌های شما زیاد بوده است. چند دقیقه بعد دوباره تلاش کنید."},
+            status=429,
+            headers={"Retry-After": str(retry_after)},
+        )
+
     try:
         profile = resolve_profile(request.POST)
         if profile is None:
@@ -496,10 +524,14 @@ def process(request):
                     {"error": "حجم تصویر بیش از حد مجاز است (حداکثر ۲۰ مگابایت)."}, status=400
                 )
 
+            # Fix the orientation and bring the resolution down to something
+            # sane *before* storing, so every later step — the aspect ratio the
+            # frame is cut to, the render, the order image — uses the corrected
+            # copy rather than the raw upload.
             try:
-                Image.open(io.BytesIO(image_bytes)).verify()
-            except Exception:
-                return JsonResponse({"error": "فایل انتخاب‌شده یک تصویر معتبر نیست."}, status=400)
+                image_bytes, _ = normalise_upload(image_bytes)
+            except UploadRejected as exc:
+                return JsonResponse({"error": str(exc)}, status=400)
 
             session_id = uuid.uuid4().hex
             request.session["image_id"] = session_id

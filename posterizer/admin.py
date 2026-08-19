@@ -236,12 +236,13 @@ class OrderAdmin(admin.ModelAdmin):
         "frame_size",
         "cost_column",
         "status",
+        "in_gallery",
         "submitted_at",
         "stl_link",
     )
     list_display_links = ("id", "thumbnail")
-    list_editable = ("status",)
-    list_filter = ("status", "source", "profile", "created_at")
+    list_editable = ("status", "in_gallery")
+    list_filter = ("status", "in_gallery", "source", "profile", "created_at")
     search_fields = (
         "id",
         "user__phone",
@@ -252,7 +253,8 @@ class OrderAdmin(admin.ModelAdmin):
     )
     date_hierarchy = "created_at"
     list_per_page = 25
-    actions = ("mark_reviewing", "mark_approved", "mark_rejected")
+    actions = ("mark_reviewing", "mark_approved", "mark_rejected",
+               "add_to_gallery", "remove_from_gallery")
 
     readonly_fields = (
         "customer",
@@ -304,6 +306,17 @@ class OrderAdmin(admin.ModelAdmin):
                 "description": (
                     "هر رنگ یک پله با ارتفاع مخصوص خودش می‌شود. "
                     "ارتفاع پایه و جهت آن در «تنظیمات فروشگاه» قابل تغییر است."
+                ),
+            },
+        ),
+        (
+            "گالری صفحهٔ اصلی",
+            {
+                "fields": ("in_gallery", "gallery_caption", "gallery_order"),
+                "description": (
+                    "با فعال کردن این گزینه، تصویر لایه‌ای این سفارش در صفحهٔ اصلی به "
+                    "همهٔ بازدیدکنندگان نمایش داده می‌شود. عکس اصلی کاربر و نام او هرگز "
+                    "منتشر نمی‌شود. پیش از انتشار، رضایت مشتری را بگیرید."
                 ),
             },
         ),
@@ -554,3 +567,22 @@ class OrderAdmin(admin.ModelAdmin):
     @admin.action(description="رد کردن سفارش‌های انتخاب‌شده")
     def mark_rejected(self, request, queryset):
         self._bulk_status(request, queryset, Order.STATUS_REJECTED, "رد شده")
+
+    @admin.action(description="افزودن به گالری صفحهٔ اصلی")
+    def add_to_gallery(self, request, queryset):
+        usable = queryset.exclude(result_image="")
+        count = usable.update(in_gallery=True)
+        skipped = queryset.count() - usable.count()
+
+        self.message_user(request, f"{count} سفارش به گالری اضافه شد.", level=messages.SUCCESS)
+        if skipped:
+            self.message_user(
+                request,
+                f"{skipped} سفارش تصویر نهایی نداشت و اضافه نشد.",
+                level=messages.WARNING,
+            )
+
+    @admin.action(description="حذف از گالری صفحهٔ اصلی")
+    def remove_from_gallery(self, request, queryset):
+        count = queryset.update(in_gallery=False)
+        self.message_user(request, f"{count} سفارش از گالری حذف شد.", level=messages.SUCCESS)

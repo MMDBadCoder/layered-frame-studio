@@ -125,6 +125,17 @@ LOGIN_URL = "/?login=1"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/"
 
+CACHES = {
+    "default": {
+        # Filesystem, not local memory: gunicorn runs several worker processes
+        # and a per-process cache would multiply every rate limit by the worker
+        # count. This needs no extra service and no migration.
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": str(BASE_DIR / "cache"),
+        "TIMEOUT": 600,
+    }
+}
+
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 30
 SESSION_COOKIE_SAMESITE = "Lax"
@@ -135,6 +146,21 @@ CSRF_COOKIE_SAMESITE = "Lax"
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 DATA_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 25 * 1024 * 1024
+
+# Bytes on disk say nothing about the cost of decoding an image: a few hundred
+# kilobytes of PNG can expand to gigapixels. Dimensions are checked from the
+# header before any pixels are decoded (see posterizer/images.py).
+MAX_UPLOAD_PIXELS = 40_000_000        # refuse outright above this
+# The STL sampler only ever takes ~400 cells across, so detail beyond this
+# cannot reach the printed frame; it only costs processing time.
+WORKING_PIXELS = 1_500_000            # scale down to this before processing
+
+# Renders are CPU-bound and the endpoint is public, so it is throttled per
+# client. The cache backing this is filesystem-based on purpose: gunicorn runs
+# several worker processes and a local-memory cache would give each its own
+# counter, making the limit N times looser than it reads.
+RENDER_RATE_LIMIT = 20                # renders allowed per window
+RENDER_RATE_WINDOW = 300              # seconds
 
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]

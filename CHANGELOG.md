@@ -4,6 +4,38 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.1.0] — 2026-08-19
+
+### Fixed
+- **Photos taken on a phone were rendered sideways, and the frame was ordered
+  in the wrong shape.** A phone stores a portrait photo as landscape pixels
+  plus an EXIF orientation tag; the tag was ignored everywhere. Because the
+  aspect ratio decides the dimensions of the physical frame, a customer
+  ordering a 20×30 portrait would have received a 30×20 landscape plate.
+  Orientation is now applied on upload, before anything measures the image.
+
+### Added — upload limits and throttling
+- Resolution cap (40 MP) with the actual dimensions in the refusal message, and
+  automatic downscaling to 1.5 MP before processing. A 12 MP photo went from
+  not finishing inside the 300-second worker timeout to about 2 seconds.
+- Dimensions are read from the image header before any pixels are decoded, so a
+  small file that expands to gigapixels is refused rather than decoded.
+- Per-IP rate limiting on both render endpoints. They need no account and are
+  CPU-bound, which made them the cheapest way to take the site down.
+- The cache backing the limits is filesystem-based rather than local memory,
+  because each gunicorn worker would otherwise keep its own counter. This also
+  fixes the pre-existing sign-in limiter, which had the same flaw.
+- Worker count now follows the core count; rendering is CPU-bound, so the usual
+  2×cores+1 rule only added contention.
+
+### Added — homepage gallery
+- Admins mark finished orders for display on the landing page, individually or
+  in bulk, with an optional caption and ordering.
+- Flagging publishes **only** the rendered layered image. The customer's
+  original photograph stays private, and no name or contact detail is shown.
+
+---
+
 ## [1.0.1] — 2026-08-18
 
 ### Changed

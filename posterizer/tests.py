@@ -10,6 +10,7 @@ import numpy as np
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.files.base import ContentFile
 from django.test import Client, TestCase, override_settings
 from PIL import Image
 
@@ -51,6 +52,13 @@ class StudioTestCase(TestCase):
         super().tearDownClass()
 
     def setUp(self):
+        # The render throttle counts per IP and every test client is
+        # 127.0.0.1, so without this the suite throttles itself.
+        from django.core.cache import cache
+
+        cache.clear()
+        self.addCleanup(cache.clear)
+
         self.uploads = Path(tempfile.mkdtemp(prefix="pf-test-uploads-"))
         patcher = mock.patch("posterizer.views.UPLOAD_DIR", self.uploads)
         patcher.start()
@@ -951,7 +959,16 @@ class AdminPanelTests(StudioTestCase):
     def test_admin_status_change_is_stamped(self):
         response = self.client.post(
             f"/admin/posterizer/order/{self.order.pk}/change/",
-            {"status": Order.STATUS_APPROVED, "admin_note": "تأیید شد", "_save": "ذخیره"},
+            {
+                "status": Order.STATUS_APPROVED,
+                "admin_note": "تأیید شد",
+                # A browser posts every field on the form, including the
+                # gallery controls, so the test has to as well.
+                "in_gallery": "",
+                "gallery_caption": "",
+                "gallery_order": "0",
+                "_save": "ذخیره",
+            },
         )
         self.assertEqual(response.status_code, 302, response.content[:400])
 
@@ -1201,3 +1218,211 @@ class ReadyImageTests(StudioTestCase):
         self.upload_ready()
         self.client.post("/api/orders/create", {"source": "ready", "width_cm": "40"})
         self.assertContains(self.client.get("/orders/"), "تصویر آماده")
+
+
+class UploadSafetyTests(StudioTestCase):
+    """Orientation, resolution limits and the render throttle."""
+
+    @staticmethod
+    def jpeg_with_orientation(orientation: int, size=(400, 200)) -> bytes:
+        """A landscape-pixel image tagged to be displayed rotated."""
+        import piexif
+
+        width, height = size
+        array = np.zeros((height, width, 3), dtype=np.uint8)
+        array[:, : width // 2] = (20, 20, 20)
+        array[:, width // 2 :] = (240, 240, 240)
+        out = io.BytesIO()
+        Image.fromarray(array, "RGB").save(
+            out, "JPEG", quality=95,
+            exif=piexif.dump({"0th": {piexif.ImageIFD.Orientation: orientation}}),
+        )
+        return out.getvalue()
+
+    def test_exif_rotation_is_applied_before_anything_measures_the_image(self):
+        """
+        A phone stores a portrait photo as landscape pixels plus a rotate tag.
+        Ignoring it prints a landscape frame for a portrait photo.
+        """
+        from .images import normalise_upload
+
+        payload, info = normalise_upload(self.jpeg_with_orientation(6))
+        self.assertTrue(info["rotated_by_exif"])
+        self.assertEqual(info["original_size"], (400, 200))
+        self.assertEqual(info["final_size"], (200, 400))
+
+        with Image.open(io.BytesIO(payload)) as fixed:
+            self.assertEqual(fixed.size, (200, 400))
+
+    def test_the_frame_ratio_follows_the_corrected_orientation(self):
+        response = self.client.post(
+            "/api/process",
+            {
+                "profile_id": self.profile.id,
+                "postprocess_method": "none",
+                "image": SimpleUploadedFile(
+                    "phone.jpg", self.jpeg_with_orientation(6), content_type="image/jpeg"
+                ),
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.content[:300])
+
+        sizing = response.json()["sizing"]
+        self.assertEqual((sizing["image_width_px"], sizing["image_height_px"]), (200, 400))
+        self.assertAlmostEqual(sizing["ratio"], 0.5, places=3)
+
+    def test_an_untagged_image_is_left_alone(self):
+        from .images import normalise_upload
+
+        _, info = normalise_upload(make_image_bytes((300, 200)))
+        self.assertFalse(info["rotated_by_exif"])
+        self.assertEqual(info["final_size"], (300, 200))
+
+    def test_oversized_images_are_downscaled_not_rejected(self):
+        from django.conf import settings
+
+        from .images import normalise_upload
+
+        _, info = normalise_upload(make_image_bytes((4000, 3000)))
+        self.assertTrue(info["downscaled"])
+        width, height = info["final_size"]
+        self.assertLessEqual(width * height, settings.WORKING_PIXELS * 1.02)
+        # Aspect ratio must survive, or the frame comes out the wrong shape.
+        self.assertAlmostEqual(width / height, 4000 / 3000, places=2)
+
+    def test_absurd_dimensions_are_refused_with_a_reason(self):
+        from .images import UploadRejected, normalise_upload
+
+        with self.assertRaises(UploadRejected) as caught:
+            normalise_upload(make_image_bytes((9000, 7000)))
+        self.assertIn("بیش از حد بزرگ", str(caught.exception))
+
+    def test_a_decompression_bomb_is_refused_before_it_is_decoded(self):
+        """A small file can decode to gigapixels; dimensions are read first."""
+        from .images import UploadRejected, normalise_upload
+
+        out = io.BytesIO()
+        Image.new("L", (20000, 20000), 0).save(out, "PNG", optimize=True)
+        payload = out.getvalue()
+        self.assertLess(len(payload), 2_000_000, "fixture should be a small file")
+
+        with self.assertRaises(UploadRejected):
+            normalise_upload(payload)
+
+    def test_garbage_is_still_refused(self):
+        from .images import UploadRejected, normalise_upload
+
+        with self.assertRaises(UploadRejected):
+            normalise_upload(b"this is not an image at all")
+
+    def test_renders_are_rate_limited(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        with override_settings(RENDER_RATE_LIMIT=3):
+            payload = {"profile_id": self.profile.id, "postprocess_method": "none"}
+            for attempt in range(3):
+                response = self.client.post(
+                    "/api/process", {**payload, "image": upload()}
+                )
+                self.assertEqual(response.status_code, 200, f"attempt {attempt + 1}")
+
+            response = self.client.post("/api/process", {**payload, "image": upload()})
+            self.assertEqual(response.status_code, 429)
+            self.assertIn("Retry-After", response.headers)
+            self.assertIn("زیاد", response.json()["error"])
+        cache.clear()
+
+
+class GalleryTests(StudioTestCase):
+    """Admins choose which finished orders appear on the homepage."""
+
+    def setUp(self):
+        super().setUp()
+        self.user = self.make_user()
+        self.client.force_login(self.user)
+        self.render_image()
+        self.client.post(
+            "/api/orders/create",
+            {"profile_id": self.profile.id, "postprocess_method": "none", "width_cm": "40"},
+        )
+        self.order = Order.objects.get()
+
+    def test_nothing_is_shown_until_an_admin_picks_it(self):
+        self.assertNotContains(self.client.get("/"), "نمونه‌های ساخته‌شده")
+
+    def test_a_flagged_order_appears_on_the_homepage(self):
+        self.order.in_gallery = True
+        self.order.gallery_caption = "قاب سپیا"
+        self.order.save()
+
+        response = Client().get("/")   # anonymous visitor
+        self.assertContains(response, "نمونه‌های ساخته‌شده")
+        self.assertContains(response, "قاب سپیا")
+        self.assertContains(response, f"/orders/{self.order.pk}/image/result/")
+
+    def test_the_rendered_image_becomes_public_but_the_original_never_does(self):
+        self.order.in_gallery = True
+        self.order.save()
+
+        anonymous = Client()
+        self.assertEqual(anonymous.get(f"/orders/{self.order.pk}/image/result/").status_code, 200)
+
+        # The customer's own photograph stays private no matter what.
+        original = anonymous.get(f"/orders/{self.order.pk}/image/original/")
+        self.assertNotEqual(original.status_code, 200)
+
+    def test_private_orders_stay_private(self):
+        anonymous = Client()
+        self.assertNotEqual(
+            anonymous.get(f"/orders/{self.order.pk}/image/result/").status_code, 200
+        )
+
+    def test_the_caption_never_leaks_the_customer(self):
+        self.order.in_gallery = True
+        self.order.save()
+
+        html = Client().get("/").content.decode()
+        self.assertNotIn(self.user.phone, html)
+        self.assertNotIn(self.user.email, html)
+        # Falls back to the palette name, not a person.
+        self.assertIn(self.order.profile_name, html)
+
+    def test_ordering_and_limit(self):
+        self.order.in_gallery = True
+        self.order.gallery_order = 5
+        self.order.save()
+
+        second = Order.objects.create(
+            user=self.user, status=Order.STATUS_APPROVED, num_layers=3,
+            in_gallery=True, gallery_order=1, profile_name="اول",
+        )
+        second.result_image.save("g.png", ContentFile(make_image_bytes()), save=True)
+
+        items = list(Order.objects.gallery())
+        self.assertEqual([o.pk for o in items], [second.pk, self.order.pk])
+
+    def test_orders_without_a_rendered_image_are_skipped(self):
+        empty = Order.objects.create(
+            user=self.user, status=Order.STATUS_PENDING, num_layers=3, in_gallery=True
+        )
+        self.assertNotIn(empty, list(Order.objects.gallery()))
+
+    def test_admin_can_toggle_the_gallery_in_bulk(self):
+        admin = User.objects.create_superuser(
+            phone="09120000009", email="admin@example.com", password="AdminPass!234"
+        )
+        staff = Client()
+        staff.force_login(admin)
+
+        staff.post("/admin/posterizer/order/",
+                   {"action": "add_to_gallery", "_selected_action": [str(self.order.pk)]},
+                   follow=True)
+        self.order.refresh_from_db()
+        self.assertTrue(self.order.in_gallery)
+
+        staff.post("/admin/posterizer/order/",
+                   {"action": "remove_from_gallery", "_selected_action": [str(self.order.pk)]},
+                   follow=True)
+        self.order.refresh_from_db()
+        self.assertFalse(self.order.in_gallery)

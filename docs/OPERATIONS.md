@@ -232,6 +232,29 @@ Pass `--accent` or `--background` if either differs from the defaults
 
 ---
 
+## 7.8 Upload limits and throttling
+
+Set in `photoframe/settings.py`, deliberately not in the admin — these are
+safety rails rather than business settings:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `MAX_IMAGE_BYTES` | 20 MB | file size cap |
+| `MAX_UPLOAD_PIXELS` | 40 MP | refuse above this |
+| `WORKING_PIXELS` | 1.5 MP | scale down to this before processing |
+| `RENDER_RATE_LIMIT` | 20 | renders allowed per client per window |
+| `RENDER_RATE_WINDOW` | 300 s | length of that window |
+
+Byte size alone is not a useful limit: a 63 MP image compresses to about 1 MB
+and would sail past a size cap while costing minutes of CPU.
+
+Rate-limit counters live in a filesystem cache under `cache/`. That is
+deliberate — gunicorn runs several worker processes, and a local-memory cache
+would give each its own counter, making every limit N times looser than it
+reads.
+
+---
+
 ## 8. Troubleshooting
 
 | Symptom | Check |
@@ -248,6 +271,8 @@ Pass `--accent` or `--background` if either differs from the defaults
 | STL file is far too large | Lower the "maximum 3D model resolution" in the site settings |
 | The 3D model is upside down (light areas raised) | Site settings → tick "تیره‌ترین لایه بلندترین باشد" |
 | The studio opens with the wrong settings | Site settings → render defaults |
+| A customer sees "too many requests" | Render rate limit; raise `RENDER_RATE_LIMIT` or check for a stuck client |
+| A large photo is refused | Above `MAX_UPLOAD_PIXELS` (40 MP); the message states the actual dimensions |
 
 ### Quick rollback after a mistake
 ```bash
