@@ -34,6 +34,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/).
 - Flagging publishes **only** the rendered layered image. The customer's
   original photograph stays private, and no name or contact detail is shown.
 
+### Fixed — studio layout
+Adding the gallery made the canvas taller than it had ever been, which exposed
+three layout faults that had been latent:
+
+- **The top of the upload box could not be reached.** `.canvas-area` is a flex
+  item with no `min-height`, and a flex item will not shrink below its content,
+  so the canvas grew past the viewport and `overflow: hidden` on its parent cut
+  the excess off — its own `overflow: auto` never engaged. It also centred with
+  `align-items`, and centred flex content overflows in both directions at once,
+  putting the top above the scroll origin. Centring is now done with auto
+  margins, which collapse to zero when space runs out.
+- **Gallery tiles sat against the right edge** instead of centred. The strip
+  used an `auto-fill` grid, which keeps its empty tracks, so a few tiles packed
+  into the first ones — the right-hand side in an RTL document. Wrapping flex
+  centres every row, including the last.
+- **The canvas scrollbar was the browser default**, a heavy light slab on a
+  dark interface, and the only scrollable area in the app not already styled.
+  All of them now share one slim, recessed treatment.
+
+The upload box's width is also bounded by `58vh` now, so it scales with the
+window instead of forcing a scroll on shorter screens.
+
 ---
 
 ## [1.0.1] — 2026-08-18
